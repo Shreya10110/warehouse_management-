@@ -8,9 +8,12 @@ from services.auth_service import register_user
 
 
 async def run(args: argparse.Namespace) -> None:
+    """Connect to MongoDB and create one validated user from CLI arguments."""
     await connect_to_mongo()
     try:
-        user = await register_user(UserCreate(**vars(args), role=UserRole(args.role)))
+        payload = vars(args).copy()
+        payload["role"] = UserRole(payload["role"])
+        user = await register_user(UserCreate(**payload))
         print(f"Created {user.role} user {user.email} ({user.id})")
     finally:
         await close_mongo_connection()

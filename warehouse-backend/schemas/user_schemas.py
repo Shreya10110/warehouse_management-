@@ -4,6 +4,7 @@ from models.user_model import UserRole
 
 
 class UserCreate(BaseModel):
+    """Validated payload used to create users without exposing password hashes."""
     first_name: str = Field(min_length=1, max_length=80)
     last_name: str = Field(min_length=1, max_length=80)
     email: EmailStr
@@ -14,6 +15,7 @@ class UserCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_role_assignment(self) -> "UserCreate":
+        """Enforce the role-to-warehouse assignment invariant at the API edge."""
         if self.role == UserRole.OWNER and self.warehouse_id is not None:
             raise ValueError("OWNER must not have a warehouse_id")
         if self.role != UserRole.OWNER and not self.warehouse_id:
