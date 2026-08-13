@@ -10,6 +10,7 @@ async def ensure_indexes() -> None:
     await database.warehouses.create_index([("warehouse_code", ASCENDING)], unique=True)
     await database.products.create_index([("sku", ASCENDING)], unique=True)
     await database.products.create_index([("barcode", ASCENDING)], unique=True, partialFilterExpression={"barcode": {"$type": "string"}})
+    await database.sellers.create_index([("seller_code", ASCENDING)], unique=True)
     await database.inventory.create_index([("warehouse_id", ASCENDING), ("sku", ASCENDING)], unique=True)
     await database.inbound_shipments.create_index([("tracking_number", ASCENDING)], unique=True, partialFilterExpression={"tracking_number": {"$type": "string"}})
     await database.inbound_shipments.create_index([("ticket_number", ASCENDING)], unique=True, partialFilterExpression={"ticket_number": {"$type": "string"}})
@@ -25,3 +26,5 @@ async def ensure_indexes() -> None:
     await database.audit_logs.create_index([("timestamp", DESCENDING)])
     await database.revoked_tokens.create_index([("jti", ASCENDING)], unique=True)
     await database.revoked_tokens.create_index([("expires_at", ASCENDING)], expireAfterSeconds=0)
+    await database.issue_requests.create_index([("issue_id", ASCENDING)], unique=True)
+    await database.issue_requests.create_index([("warehouse_id", ASCENDING), ("status", ASCENDING)])

@@ -3,9 +3,9 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, File, UploadFile
 
 from core.exceptions import AppError
-from dependencies.auth import get_current_user, require_owner_or_manager
+from dependencies.auth import get_current_user, require_inbound, require_owner, require_owner_or_manager
 from models.user_model import User
-from schemas.domain_schemas import DamageCreate, DirectReceiptCreate, ResolutionRequest, ShipmentCreate, ShipmentReceive
+from schemas.domain_schemas import DamageCreate, ExpectedShipmentReceipt, ResolutionRequest, ShipmentCreate, ShipmentLookup
 from services import inbound_service
 from services.audit_service import record
 from services.image_service import upload_image
@@ -20,19 +20,21 @@ def scoped_query(user: User) -> dict:
 
 
 @router.post("/inbound/shipments")
-async def create_shipment(payload: ShipmentCreate, user: User = Depends(get_current_user)):
-    """Register an inbound shipment in the authenticated warehouse context."""
-    if user.role.value not in ("OWNER", "MANAGER", "INBOUND"):
-        raise AppError(403, "FORBIDDEN", "Outbound staff cannot create inbound shipments.")
+async def create_shipment(payload: ShipmentCreate, user: User = Depends(require_owner)):
+    """Register an expected inbound shipment as Admin."""
     return await inbound_service.create_shipment(payload, user)
 
 
-@router.post("/inbound/receipts")
-async def complete_receiving(payload: DirectReceiptCreate, user: User = Depends(get_current_user)):
-    """Receive inspected stock in one worker action with server-derived fields."""
-    if user.role.value not in ("OWNER", "MANAGER", "INBOUND"):
-        raise AppError(403, "FORBIDDEN", "Outbound staff cannot receive inbound shipments.")
-    return await inbound_service.complete_receiving(payload, user)
+@router.post("/inbound/shipments/lookup")
+async def lookup_shipment(payload: ShipmentLookup, user: User = Depends(require_inbound)):
+    """Locate an expected shipment by tracking or ticket in the assigned warehouse."""
+    return await inbound_service.lookup_expected_shipment(payload, user)
+
+
+@router.post("/inbound/shipments/{shipment_id}/complete")
+async def complete_expected(shipment_id: str, payload: ExpectedShipmentReceipt, user: User = Depends(require_inbound)):
+    """Complete expected receiving with calculated good quantity and inventory posting."""
+    return await inbound_service.complete_expected_shipment(shipment_id, payload, user)
 
 
 @router.get("/inbound/shipments")
@@ -55,14 +57,6 @@ async def shipment(shipment_id: str, user: User = Depends(get_current_user)):
     if user.role.value != "OWNER" and item["warehouse_id"] != user.warehouse_id:
         raise AppError(403, "FORBIDDEN", "Shipment belongs to another warehouse.")
     return item
-
-
-@router.post("/inbound/shipments/{shipment_id}/receive")
-async def receive(shipment_id: str, payload: ShipmentReceive, user: User = Depends(get_current_user)):
-    """Validate inspection and post an inbound shipment exactly once."""
-    if user.role.value not in ("OWNER", "MANAGER", "INBOUND"):
-        raise AppError(403, "FORBIDDEN", "Outbound staff cannot receive inbound shipments.")
-    return await inbound_service.receive_shipment(shipment_id, payload, user)
 
 
 @router.post("/inbound/shipments/{shipment_id}/damage")

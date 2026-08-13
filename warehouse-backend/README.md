@@ -8,10 +8,10 @@ routes → controllers → services → cruds → MongoDB
 
 ## Local setup
 
-1. Start the MongoDB replica set from the repository root:
+1. Start MongoDB locally on port `27017`. The development configuration supports a standard standalone MongoDB server:
 
    ```powershell
-   docker compose up -d
+   mongod --dbpath <your-data-directory>
    ```
 
 2. Copy `.env.example` to `.env` and set a strong `JWT_SECRET_KEY`. Add Cloudinary credentials to enable damage-image uploads.
@@ -33,7 +33,7 @@ routes → controllers → services → cruds → MongoDB
 
 Open `http://localhost:8000/docs` for the complete API.
 
-MongoDB must run as a replica set in production because multi-line order reservations use database transactions. A compensated reservation fallback exists for local/testing engines without transaction support.
+Use a MongoDB replica set in production for transactional multi-line order reservations. A compensated reservation fallback is used by standalone local MongoDB installations.
 
 ## Verification
 

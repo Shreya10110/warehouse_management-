@@ -8,6 +8,7 @@ from models.base import MongoModel
 class ShipmentStatus(StrEnum):
     """Inbound shipment workflow states."""
     CREATED = "CREATED"
+    EXPECTED = "EXPECTED"
     RECEIVING = "RECEIVING"
     INSPECTION = "INSPECTION"
     COMPLETED = "COMPLETED"
@@ -23,7 +24,8 @@ class InboundShipment(MongoModel):
     ticket_number: str | None = None
     supplier_name: str
     supplier_reference: str | None = None
-    status: ShipmentStatus = ShipmentStatus.CREATED
+    status: ShipmentStatus = ShipmentStatus.EXPECTED
+    seller_id: str | None = None
     expected_items: list[dict[str, Any]] = Field(default_factory=list)
     received_items: list[dict[str, Any]] = Field(default_factory=list)
     created_by: str

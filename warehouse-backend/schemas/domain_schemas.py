@@ -30,6 +30,16 @@ class ProductCreate(BaseModel):
     barcode: str | None = None
 
 
+class SellerCreate(BaseModel):
+    """Admin-managed seller or supplier master payload."""
+    seller_code: str = Field(min_length=2, max_length=40)
+    name: str = Field(min_length=2, max_length=150)
+    contact_name: str | None = None
+    email: EmailStr | None = None
+    phone: str | None = None
+    address: str | None = None
+
+
 class ShipmentItem(BaseModel):
     """Expected line item on an inbound shipment."""
     sku: str
@@ -43,6 +53,7 @@ class ShipmentCreate(BaseModel):
     tracking_number: str | None = None
     ticket_number: str | None = None
     supplier_name: str
+    seller_id: str
     supplier_reference: str | None = None
     expected_items: list[ShipmentItem] = Field(min_length=1)
 
@@ -51,8 +62,22 @@ class ShipmentCreate(BaseModel):
         """Require the reference identifier that matches the source type."""
         if self.source_type == "CARRIER" and not self.tracking_number:
             raise ValueError("Carrier shipments require tracking_number")
+        return self
+
+
+class ShipmentLookup(BaseModel):
+    """Tracking or ticket reference used to locate an expected inbound shipment."""
+    source_type: Literal["CARRIER", "MANUAL_DROP"]
+    tracking_number: str | None = None
+    ticket_number: str | None = None
+
+    @model_validator(mode="after")
+    def validate_reference(self) -> "ShipmentLookup":
+        """Require the lookup identifier matching the arrival type."""
+        if self.source_type == "CARRIER" and not self.tracking_number:
+            raise ValueError("Carrier lookup requires a tracking number")
         if self.source_type == "MANUAL_DROP" and not self.ticket_number:
-            raise ValueError("Manual drops require ticket_number")
+            raise ValueError("Seller drop-off lookup requires a ticket number")
         return self
 
 
@@ -75,6 +100,28 @@ class ReceivedItem(BaseModel):
 class ShipmentReceive(BaseModel):
     """Complete inspected receipt payload for an inbound shipment."""
     items: list[ReceivedItem] = Field(min_length=1)
+
+
+class ExpectedReceiptItem(BaseModel):
+    """Physical count entered by inbound staff for an expected product."""
+    sku: str | None = None
+    barcode: str | None = None
+    received_quantity: int = Field(ge=0)
+    damaged_quantity: int = Field(default=0, ge=0)
+
+    @model_validator(mode="after")
+    def validate_quantities(self) -> "ExpectedReceiptItem":
+        """Require a product identifier and derive a non-negative good count."""
+        if not (self.sku and self.sku.strip()) and not (self.barcode and self.barcode.strip()):
+            raise ValueError("Select a product or scan a barcode")
+        if self.damaged_quantity > self.received_quantity:
+            raise ValueError("Damaged quantity cannot exceed received quantity")
+        return self
+
+
+class ExpectedShipmentReceipt(BaseModel):
+    """Complete physical receipt for every product expected on a shipment."""
+    items: list[ExpectedReceiptItem] = Field(min_length=1)
 
 
 class DirectReceiptItem(BaseModel):
@@ -163,6 +210,7 @@ class OrderCreate(BaseModel):
     customer_name: str = Field(min_length=2)
     customer_phone: str = Field(min_length=7)
     customer_email: EmailStr | None = None
+    seller_id: str
     shipping_address: dict[str, Any]
     items: list[OrderItem] = Field(min_length=1)
 
@@ -197,3 +245,17 @@ class PackageCreate(BaseModel):
     height: float = Field(gt=0)
     carrier: str
     tracking_number: str
+
+
+class IssueCreate(BaseModel):
+    """Manager issue or request submitted to Admin."""
+    category: Literal["INVENTORY", "INBOUND", "OUTBOUND", "EMPLOYEE", "SYSTEM", "OTHER"]
+    subject: str = Field(min_length=3, max_length=150)
+    description: str = Field(min_length=5, max_length=2000)
+    priority: Literal["LOW", "MEDIUM", "HIGH", "URGENT"] = "MEDIUM"
+
+
+class IssueResolution(BaseModel):
+    """Admin response and final decision for a manager issue."""
+    status: Literal["APPROVED", "REJECTED", "RESOLVED"]
+    admin_response: str = Field(min_length=3, max_length=2000)

@@ -17,6 +17,7 @@ class Order(MongoModel):
     assigned_warehouse_id: str | None = None
     rejection_reason: str | None = None
     created_by: str
+    seller_id: str | None = None
     picked_by: str | None = None
     picked_at: str | None = None
     picked_items: list[dict[str, Any]] = Field(default_factory=list)

@@ -15,6 +15,7 @@ from routes.auth_routes import router as auth_router
 from routes.dashboard_routes import router as dashboard_router
 from routes.inbound_routes import router as inbound_router
 from routes.inventory_routes import router as inventory_router
+from routes.issue_routes import router as issue_router
 from routes.master_routes import router as master_router
 from routes.order_routes import router as order_router
 
@@ -51,7 +52,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 register_exception_handlers(app)
-for api_router in (auth_router, approval_router, master_router, inventory_router, inbound_router, order_router, audit_router, dashboard_router):
+for api_router in (auth_router, approval_router, master_router, inventory_router, inbound_router, order_router, issue_router, audit_router, dashboard_router):
     app.include_router(api_router, prefix=settings.api_prefix)
 
 

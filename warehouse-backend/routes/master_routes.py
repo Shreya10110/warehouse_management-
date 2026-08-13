@@ -4,7 +4,7 @@ from controllers import master_controller
 from cruds.base_crud import CRUDRepository
 from dependencies.auth import get_current_user, require_owner
 from models.user_model import User
-from schemas.domain_schemas import ProductCreate, StatusRequest, WarehouseCreate
+from schemas.domain_schemas import ProductCreate, SellerCreate, StatusRequest, WarehouseCreate
 from schemas.user_schemas import UserCreate, UserUpdate
 
 router = APIRouter(tags=["Master Data"])
@@ -88,6 +88,35 @@ async def product_status(sku: str, payload: StatusRequest, _: User = Depends(req
         from core.exceptions import AppError
         raise AppError(404, "PRODUCT_NOT_FOUND", "Product was not found.")
     return await product_repo.update(item["id"], payload.model_dump())
+
+
+@router.post("/sellers")
+async def create_seller(payload: SellerCreate, user: User = Depends(require_owner)):
+    """Create a seller or supplier master as Admin."""
+    return await master_controller.create_seller(payload, user)
+
+
+@router.get("/sellers")
+async def list_sellers(search: str | None = None, is_active: bool | None = None, _: User = Depends(get_current_user)):
+    """List approved sellers available for operational documents."""
+    query = {}
+    if search:
+        query["$or"] = [{"seller_code": {"$regex": search, "$options": "i"}}, {"name": {"$regex": search, "$options": "i"}}]
+    if is_active is not None:
+        query["is_active"] = is_active
+    return await master_controller.seller_repo.list(query)
+
+
+@router.patch("/sellers/{seller_id}/status")
+async def seller_status(seller_id: str, payload: StatusRequest, user: User = Depends(require_owner)):
+    """Activate or deactivate a seller master record."""
+    old = await master_controller.seller_repo.get(seller_id)
+    if not old:
+        from core.exceptions import AppError
+        raise AppError(404, "SELLER_NOT_FOUND", "Seller was not found.")
+    updated = await master_controller.seller_repo.update(seller_id, payload.model_dump())
+    await master_controller.record(user, "STATUS", "SELLER", seller_id, None, old, updated)
+    return updated
 
 
 @router.post("/users")

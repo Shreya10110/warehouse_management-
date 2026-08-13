@@ -5,6 +5,7 @@ from core.security import hash_password
 from cruds.base_crud import CRUDRepository
 from cruds.user_crud import create_user, find_user_by_email, find_user_by_id, list_users, update_user
 from models.product_model import Product
+from models.seller_model import Seller
 from models.user_model import User
 from models.warehouse_model import Warehouse
 from schemas.domain_schemas import ProductCreate, StatusRequest, WarehouseCreate
@@ -14,6 +15,7 @@ from services.auth_service import public_user
 
 warehouse_repo = CRUDRepository("warehouses")
 product_repo = CRUDRepository("products")
+seller_repo = CRUDRepository("sellers")
 
 
 async def create_warehouse(payload: WarehouseCreate, user: User) -> dict:
@@ -72,6 +74,16 @@ async def create_product(payload: ProductCreate, user: User) -> dict:
         raise AppError(409, "DUPLICATE_BARCODE", "Barcode already belongs to another product.")
     created = await product_repo.create(Product(**(payload.model_dump() | {"sku": sku, "barcode": barcode})).to_document())
     await record(user, "CREATE", "PRODUCT", created["id"], None, new=created)
+    return created
+
+
+async def create_seller(payload, user: User) -> dict:
+    """Create a uniquely coded seller or supplier master record."""
+    code = payload.seller_code.strip().upper()
+    if await seller_repo.find_one({"seller_code": code}):
+        raise AppError(409, "DUPLICATE_SELLER_CODE", "Seller code already exists.")
+    created = await seller_repo.create(Seller(**(payload.model_dump() | {"seller_code": code})).to_document())
+    await record(user, "CREATE", "SELLER", created["id"], None, new=created)
     return created
 
 

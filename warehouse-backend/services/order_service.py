@@ -19,6 +19,7 @@ from services.inventory_service import available, change_quantities, inventory_r
 order_repo = CRUDRepository("orders")
 package_repo = CRUDRepository("packages")
 warehouse_repo = CRUDRepository("warehouses")
+seller_repo = CRUDRepository("sellers")
 
 
 async def eligible_warehouses(items: list[dict]) -> list[str]:
@@ -39,6 +40,10 @@ async def eligible_warehouses(items: list[dict]) -> list[str]:
 async def create_order(payload: OrderCreate, user: User) -> dict:
     """Validate SKU lines and create an order with computed warehouse eligibility."""
     normalized = []
+    if payload.seller_id:
+        seller = await seller_repo.get(payload.seller_id)
+        if not seller or not seller.get("is_active", True):
+            raise AppError(404, "SELLER_NOT_FOUND", "Seller was not found or is inactive.")
     for line in payload.items:
         sku = line.sku.strip().upper()
         if not await product_repo.find_one({"sku": sku, "is_active": True}):
@@ -97,12 +102,12 @@ async def assign_and_reserve(record_id: str, warehouse_id: str, user: User) -> d
                 )
                 await database.audit_logs.insert_one(audit.to_document(), session=session)
             await database.orders.update_one(
-                {"_id": ObjectId(record_id)}, {"$set": {"assigned_warehouse_id": warehouse_id, "eligible_warehouse_ids": eligible, "status": "RESERVED", "updated_at": datetime.now(timezone.utc)}}, session=session,
+                {"_id": ObjectId(record_id)}, {"$set": {"assigned_warehouse_id": warehouse_id, "eligible_warehouse_ids": eligible, "status": "CREATED", "updated_at": datetime.now(timezone.utc)}}, session=session,
             )
             order_audit = AuditLog(
                 user_id=user.id, user_role=user.role.value, warehouse_id=warehouse_id,
                 action="ASSIGN_AND_RESERVE", entity_type="ORDER", entity_id=record_id,
-                old_value={"status": order["status"]}, new_value={"status": "RESERVED", "assigned_warehouse_id": warehouse_id},
+                old_value={"status": order["status"]}, new_value={"status": "CREATED", "assigned_warehouse_id": warehouse_id},
             )
             await database.audit_logs.insert_one(order_audit.to_document(), session=session)
     try:
@@ -124,7 +129,7 @@ async def assign_and_reserve(record_id: str, warehouse_id: str, user: User) -> d
                 reserved.append(line)
             updated_result = await database.orders.update_one(
                 {"_id": ObjectId(record_id), "status": {"$in": ["PENDING", "AWAITING_WAREHOUSE_SELECTION"]}},
-                {"$set": {"assigned_warehouse_id": warehouse_id, "eligible_warehouse_ids": eligible, "status": "RESERVED", "updated_at": datetime.now(timezone.utc)}},
+                {"$set": {"assigned_warehouse_id": warehouse_id, "eligible_warehouse_ids": eligible, "status": "CREATED", "updated_at": datetime.now(timezone.utc)}},
             )
             if updated_result.modified_count != 1:
                 raise AppError(409, "INVALID_ORDER_STATUS", "Order changed before reservation completed.")
@@ -137,7 +142,7 @@ async def assign_and_reserve(record_id: str, warehouse_id: str, user: User) -> d
             raise
         for line in reserved:
             await record_transaction(warehouse_id, line["sku"], "RESERVE", line["quantity"], "ORDER", order["order_id"], user)
-        await record(user, "ASSIGN_AND_RESERVE", "ORDER", record_id, warehouse_id, order, {"status": "RESERVED", "assigned_warehouse_id": warehouse_id})
+        await record(user, "ASSIGN_AND_RESERVE", "ORDER", record_id, warehouse_id, order, {"status": "CREATED", "assigned_warehouse_id": warehouse_id})
     updated = await order_repo.get(record_id)
     return updated
 
@@ -204,7 +209,7 @@ async def cancel(record_id: str, user: User) -> dict:
         raise AppError(409, "ORDER_ALREADY_SHIPPED", "A shipped order cannot be cancelled.")
     if order["status"] == "CANCELLED":
         raise AppError(409, "ORDER_ALREADY_CANCELLED", "Order is already cancelled.")
-    cancellable = ("PENDING", "AWAITING_WAREHOUSE_SELECTION", "RESERVED", "PICKING", "PICKED", "PACKED")
+    cancellable = ("PENDING", "AWAITING_WAREHOUSE_SELECTION", "CREATED", "PICKING", "PICKED", "PACKED")
     if order["status"] not in cancellable:
         raise AppError(409, "INVALID_ORDER_STATUS", "Order cannot be cancelled in its current status.")
     authorize_order(order, user)
@@ -215,7 +220,7 @@ async def cancel(record_id: str, user: User) -> dict:
     if claim.modified_count != 1:
         raise AppError(409, "INVALID_ORDER_STATUS", "Order changed before cancellation completed.")
     try:
-        if order.get("assigned_warehouse_id") and order["status"] in ("RESERVED", "PICKING", "PICKED", "PACKED"):
+        if order.get("assigned_warehouse_id") and order["status"] in ("CREATED", "PICKING", "PICKED", "PACKED"):
             for line in order["items"]:
                 await change_quantities(order["assigned_warehouse_id"], line["sku"], {"reserved_quantity": -line["quantity"]}, "RELEASE", "ORDER", order["order_id"], user)
         updated = await order_repo.update(record_id, {"status": "CANCELLED", "updated_at": datetime.now(timezone.utc)})

@@ -35,30 +35,50 @@ def test_complete_inbound_and_outbound_workflows() -> None:
     })
     assert warehouse.status_code == 200, warehouse.text
     warehouse_id = warehouse.json()["id"]
+    inbound = User(
+        first_name="Inbound", last_name="Worker", email="inbound@example.com", mobile="9999999998",
+        password_hash=hash_password("StrongPass123"), role=UserRole.INBOUND, warehouse_id=warehouse_id,
+    )
+    outbound = User(
+        first_name="Outbound", last_name="Worker", email="outbound@example.com", mobile="9999999997",
+        password_hash=hash_password("StrongPass123"), role=UserRole.OUTBOUND, warehouse_id=warehouse_id,
+    )
+    asyncio.run(database_module.database.users.insert_many([inbound.to_document(), outbound.to_document()]))
+    inbound_token = client.post("/api/v1/auth/login", json={"email": inbound.email, "password": "StrongPass123"}).json()["access_token"]
+    outbound_token = client.post("/api/v1/auth/login", json={"email": outbound.email, "password": "StrongPass123"}).json()["access_token"]
+    inbound_headers = {"Authorization": f"Bearer {inbound_token}"}
+    outbound_headers = {"Authorization": f"Bearer {outbound_token}"}
 
     product = client.post("/api/v1/products", headers=headers, json={
         "sku": "SKU-CHAIR-01", "name": "Warehouse Chair", "category": "Furniture", "unit": "EA",
     })
     assert product.status_code == 200, product.text
+    seller = client.post("/api/v1/sellers", headers=headers, json={"seller_code": "ACME", "name": "Acme Supply"})
+    assert seller.status_code == 200, seller.text
+    seller_id = seller.json()["id"]
 
     shipment = client.post("/api/v1/inbound/shipments", headers=headers, json={
         "warehouse_id": warehouse_id, "source_type": "CARRIER", "tracking_number": "TRACK-001",
-        "supplier_name": "Acme Supply", "expected_items": [{"sku": "SKU-CHAIR-01", "expected_quantity": 100}],
+        "seller_id": seller_id, "supplier_name": "Acme Supply", "expected_items": [{"sku": "SKU-CHAIR-01", "expected_quantity": 100}],
     })
     assert shipment.status_code == 200, shipment.text
     shipment_id = shipment.json()["id"]
-    receipt = client.post(f"/api/v1/inbound/shipments/{shipment_id}/receive", headers=headers, json={
-        "items": [{"sku": "SKU-CHAIR-01", "received_quantity": 100, "good_quantity": 94, "damaged_quantity": 4, "quarantine_quantity": 2}],
+    lookup = client.post("/api/v1/inbound/shipments/lookup", headers=inbound_headers, json={
+        "source_type": "CARRIER", "tracking_number": "TRACK-001",
+    })
+    assert lookup.status_code == 200, lookup.text
+    receipt = client.post(f"/api/v1/inbound/shipments/{shipment_id}/complete", headers=inbound_headers, json={
+        "items": [{"sku": "SKU-CHAIR-01", "received_quantity": 100, "damaged_quantity": 4}],
     })
     assert receipt.status_code == 200, receipt.text
     assert receipt.json()["received_items"][0]["quantity_status"] == "MATCHED"
-    duplicate_receipt = client.post(f"/api/v1/inbound/shipments/{shipment_id}/receive", headers=headers, json={
-        "items": [{"sku": "SKU-CHAIR-01", "received_quantity": 100, "good_quantity": 94, "damaged_quantity": 4, "quarantine_quantity": 2}],
+    duplicate_receipt = client.post(f"/api/v1/inbound/shipments/{shipment_id}/complete", headers=inbound_headers, json={
+        "items": [{"sku": "SKU-CHAIR-01", "received_quantity": 100, "damaged_quantity": 4}],
     })
     assert duplicate_receipt.status_code == 409
 
     order = client.post("/api/v1/orders", headers=headers, json={
-        "customer_name": "Asha Customer", "customer_phone": "8888888888",
+        "seller_id": seller_id, "customer_name": "Asha Customer", "customer_phone": "8888888888",
         "shipping_address": {"address_line_1": "12 Market Road", "city": "Bengaluru", "postal_code": "560001"},
         "items": [{"sku": "SKU-CHAIR-01", "quantity": 5}],
     })
@@ -69,33 +89,33 @@ def test_complete_inbound_and_outbound_workflows() -> None:
 
     reservation = client.post(f"/api/v1/orders/{order_id}/assign-warehouse", headers=headers, json={"warehouse_id": warehouse_id})
     assert reservation.status_code == 200, reservation.text
-    assert reservation.json()["status"] == "RESERVED"
-    assert client.post(f"/api/v1/orders/{order_id}/start-picking", headers=headers).json()["status"] == "PICKING"
-    pick = client.post(f"/api/v1/orders/{order_id}/pick", headers=headers, json={"items": [{"sku": "SKU-CHAIR-01", "quantity": 5}]})
+    assert reservation.json()["status"] == "CREATED"
+    assert client.post(f"/api/v1/orders/{order_id}/start-picking", headers=outbound_headers).json()["status"] == "PICKING"
+    pick = client.post(f"/api/v1/orders/{order_id}/pick", headers=outbound_headers, json={"items": [{"sku": "SKU-CHAIR-01", "quantity": 5}]})
     assert pick.status_code == 200, pick.text
-    assert client.post(f"/api/v1/orders/{order_id}/complete-picking", headers=headers).json()["status"] == "PICKED"
+    assert client.post(f"/api/v1/orders/{order_id}/complete-picking", headers=outbound_headers).json()["status"] == "PICKED"
 
-    package = client.post(f"/api/v1/orders/{order_id}/pack", headers=headers, json={
+    package = client.post(f"/api/v1/orders/{order_id}/pack", headers=outbound_headers, json={
         "weight": 12.5, "length": 80, "width": 60, "height": 50,
         "carrier": "BlueDart", "tracking_number": "BD-OUT-001",
     })
     assert package.status_code == 200, package.text
     package_id = package.json()["id"]
-    generated = client.post(f"/api/v1/packages/{package_id}/generate-label", headers=headers)
+    generated = client.post(f"/api/v1/packages/{package_id}/generate-label", headers=outbound_headers)
     assert generated.status_code == 200, generated.text
     label = client.get(f"/api/v1/packages/{package_id}/label", headers=headers)
     assert label.status_code == 200
     assert "data:image/png;base64" in label.text
-    shipped = client.post(f"/api/v1/packages/{package_id}/ship", headers=headers)
+    shipped = client.post(f"/api/v1/packages/{package_id}/ship", headers=outbound_headers)
     assert shipped.status_code == 200, shipped.text
     assert shipped.json()["status"] == "SHIPPED"
-    assert client.post(f"/api/v1/packages/{package_id}/ship", headers=headers).status_code == 409
+    assert client.post(f"/api/v1/packages/{package_id}/ship", headers=outbound_headers).status_code == 409
 
     inventory = client.get(f"/api/v1/warehouses/{warehouse_id}/inventory/SKU-CHAIR-01", headers=headers)
     assert inventory.status_code == 200, inventory.text
     assert inventory.json()["on_hand_quantity"] == 95
     assert inventory.json()["reserved_quantity"] == 0
-    assert inventory.json()["available_quantity"] == 89
+    assert inventory.json()["available_quantity"] == 91
     assert len(client.get("/api/v1/inventory-transactions", headers=headers).json()) >= 3
     assert len(client.get("/api/v1/audit-logs", headers=headers).json()) >= 8
 
@@ -140,16 +160,15 @@ def test_warehouse_isolation_and_role_permissions() -> None:
     assert client.get(f"/api/v1/warehouses/{second.id}/audit-logs", headers=manager_headers).status_code == 403
 
     shipment = client.post("/api/v1/inbound/shipments", headers=manager_headers, json={
-        "warehouse_id": second.id, "source_type": "MANUAL_DROP", "ticket_number": "TICKET-ISOLATION",
+        "warehouse_id": second.id, "seller_id": "507f1f77bcf86cd799439011", "source_type": "MANUAL_DROP", "ticket_number": "TICKET-ISOLATION",
         "supplier_name": "Test Supplier", "expected_items": [{"sku": product.sku, "expected_quantity": 1}],
     })
-    assert shipment.status_code == 200, shipment.text
-    assert shipment.json()["warehouse_id"] == first.id
+    assert shipment.status_code == 403, shipment.text
 
     outbound_login = client.post("/api/v1/auth/login", json={"email": outbound.email, "password": "StrongPass123"}).json()
     outbound_headers = {"Authorization": f"Bearer {outbound_login['access_token']}"}
     forbidden_inbound = client.post("/api/v1/inbound/shipments", headers=outbound_headers, json={
-        "source_type": "MANUAL_DROP", "ticket_number": "TICKET-OUTBOUND",
+        "seller_id": "507f1f77bcf86cd799439011", "source_type": "MANUAL_DROP", "ticket_number": "TICKET-OUTBOUND",
         "supplier_name": "Supplier", "expected_items": [{"sku": product.sku, "expected_quantity": 1}],
     })
     assert forbidden_inbound.status_code == 403

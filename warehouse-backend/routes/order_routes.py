@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import HTMLResponse
 
 from core.exceptions import AppError
-from dependencies.auth import get_current_user, require_owner
+from dependencies.auth import get_current_user, require_outbound, require_owner
 from models.user_model import User
 from schemas.domain_schemas import OrderCreate, PackageCreate, PickRequest, RejectionRequest, WarehouseAssignment
 from services import order_service
@@ -73,19 +73,19 @@ async def assign(order_id: str, payload: WarehouseAssignment, user: User = Depen
 
 
 @router.post("/orders/{order_id}/start-picking")
-async def start_picking(order_id: str, user: User = Depends(get_current_user)):
+async def start_picking(order_id: str, user: User = Depends(require_outbound)):
     """Move a reserved order into the picking workflow."""
-    return await order_service.transition(order_id, ("RESERVED",), "PICKING", user)
+    return await order_service.transition(order_id, ("CREATED",), "PICKING", user)
 
 
 @router.post("/orders/{order_id}/pick")
-async def pick(order_id: str, payload: PickRequest, user: User = Depends(get_current_user)):
+async def pick(order_id: str, payload: PickRequest, user: User = Depends(require_outbound)):
     """Record exact picked quantities for the order."""
     return await order_service.pick(order_id, payload, user)
 
 
 @router.post("/orders/{order_id}/complete-picking")
-async def complete_picking(order_id: str, user: User = Depends(get_current_user)):
+async def complete_picking(order_id: str, user: User = Depends(require_outbound)):
     """Complete picking only after all order lines were recorded."""
     item = await order_service.order_repo.get(order_id)
     if not item or not item.get("picked_items"):
@@ -94,7 +94,7 @@ async def complete_picking(order_id: str, user: User = Depends(get_current_user)
 
 
 @router.post("/orders/{order_id}/pack")
-async def pack(order_id: str, payload: PackageCreate, user: User = Depends(get_current_user)):
+async def pack(order_id: str, payload: PackageCreate, user: User = Depends(require_outbound)):
     """Pack a picked order and create its package record."""
     return await order_service.pack(order_id, payload, user)
 
@@ -111,7 +111,7 @@ async def package(package_id: str, user: User = Depends(get_current_user)):
 
 
 @router.post("/packages/{package_id}/generate-label")
-async def generate_label(package_id: str, user: User = Depends(get_current_user)):
+async def generate_label(package_id: str, user: User = Depends(require_outbound)):
     """Generate a printable internal shipping label URL for a packed package."""
     item = await package(package_id, user)
     url = f"/api/v1/packages/{package_id}/label"
@@ -128,12 +128,12 @@ async def label(package_id: str, user: User = Depends(get_current_user)):
 
 
 @router.post("/packages/{package_id}/ship")
-async def ship(package_id: str, user: User = Depends(get_current_user)):
+async def ship(package_id: str, user: User = Depends(require_outbound)):
     """Ship a packed package and consume its reserved inventory."""
     return await order_service.ship_package(package_id, user)
 
 
 @router.post("/orders/{order_id}/cancel")
-async def cancel(order_id: str, user: User = Depends(get_current_user)):
+async def cancel(order_id: str, user: User = Depends(require_owner)):
     """Cancel an unshipped order and release reserved stock."""
     return await order_service.cancel(order_id, user)

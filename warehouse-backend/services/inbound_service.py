@@ -8,12 +8,13 @@ from cruds.base_crud import CRUDRepository
 from models.damage_report_model import DamageReport
 from models.inbound_shipment_model import InboundShipment
 from models.user_model import User
-from schemas.domain_schemas import DamageCreate, DirectReceiptCreate, ShipmentCreate, ShipmentReceive
+from schemas.domain_schemas import DamageCreate, DirectReceiptCreate, ExpectedShipmentReceipt, ShipmentCreate, ShipmentLookup, ShipmentReceive
 from services.audit_service import record
 from services.inventory_service import change_quantities, product_repo
 
 shipment_repo = CRUDRepository("inbound_shipments")
 damage_repo = CRUDRepository("damage_reports")
+seller_repo = CRUDRepository("sellers")
 
 
 def warehouse_for(user: User, requested: str | None) -> str:
@@ -30,9 +31,18 @@ def warehouse_for(user: User, requested: str | None) -> str:
 async def create_shipment(payload: ShipmentCreate, user: User) -> dict:
     """Validate products and unique references, then register an inbound shipment."""
     warehouse_id = warehouse_for(user, payload.warehouse_id)
+    if not await get_database().warehouses.find_one({"_id": ObjectId(warehouse_id), "is_active": True}):
+        raise AppError(404, "WAREHOUSE_NOT_FOUND", "Destination warehouse was not found or is inactive.")
+    if payload.seller_id:
+        seller = await seller_repo.get(payload.seller_id)
+        if not seller or not seller.get("is_active", True):
+            raise AppError(404, "SELLER_NOT_FOUND", "Seller was not found or is inactive.")
+    ticket_number = payload.ticket_number
+    if payload.source_type == "MANUAL_DROP" and not ticket_number:
+        ticket_number = f"TKT-{uuid4().hex[:10].upper()}"
     if payload.tracking_number and await shipment_repo.find_one({"tracking_number": payload.tracking_number}):
         raise AppError(409, "DUPLICATE_TRACKING_NUMBER", "Tracking number already exists.")
-    if payload.ticket_number and await shipment_repo.find_one({"ticket_number": payload.ticket_number}):
+    if ticket_number and await shipment_repo.find_one({"ticket_number": ticket_number}):
         raise AppError(409, "DUPLICATE_TICKET_NUMBER", "Ticket number already exists.")
     expected = []
     for item in payload.expected_items:
@@ -41,11 +51,116 @@ async def create_shipment(payload: ShipmentCreate, user: User) -> dict:
         expected.append(item.model_dump())
     model = InboundShipment(
         shipment_id=f"IN-{uuid4().hex[:10].upper()}", warehouse_id=warehouse_id,
-        created_by=user.id, expected_items=expected, **payload.model_dump(exclude={"warehouse_id", "expected_items"}),
+        created_by=user.id, expected_items=expected, status="EXPECTED",
+        **(payload.model_dump(exclude={"warehouse_id", "expected_items", "ticket_number"}) | {"ticket_number": ticket_number}),
     )
     created = await shipment_repo.create(model.to_document())
     await record(user, "CREATE", "INBOUND_SHIPMENT", created["id"], warehouse_id, new=created)
     return created
+
+
+async def lookup_expected_shipment(payload: ShipmentLookup, user: User) -> dict:
+    """Find an expected shipment in the worker's warehouse and mark it receiving."""
+    warehouse_id = warehouse_for(user, None)
+    reference = {"tracking_number": payload.tracking_number} if payload.source_type == "CARRIER" else {"ticket_number": payload.ticket_number}
+    shipment = await shipment_repo.find_one(reference | {"warehouse_id": warehouse_id})
+    if not shipment:
+        raise AppError(404, "SHIPMENT_NOT_FOUND", "No expected shipment matches this reference in your warehouse.")
+    if shipment["status"] in ("COMPLETED", "RECEIVED"):
+        raise AppError(409, "SHIPMENT_ALREADY_COMPLETED", "This shipment has already been received.")
+    if shipment["status"] == "EXPECTED":
+        updated = await shipment_repo.update(shipment["id"], {
+            "status": "RECEIVING", "receiving_started_by": user.id,
+            "receiving_started_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc),
+        })
+        await record(user, "START_RECEIVING", "INBOUND_SHIPMENT", shipment["id"], warehouse_id, shipment, updated)
+        return updated
+    if shipment["status"] != "RECEIVING":
+        raise AppError(409, "INVALID_SHIPMENT_STATUS", "Shipment cannot be received in its current status.")
+    return shipment
+
+
+async def complete_expected_shipment(record_id: str, payload: ExpectedShipmentReceipt, user: User) -> dict:
+    """Complete one expected shipment with server-calculated good and damaged quantities."""
+    shipment = await shipment_repo.get(record_id)
+    if not shipment:
+        raise AppError(404, "SHIPMENT_NOT_FOUND", "Inbound shipment was not found.")
+    warehouse_id = warehouse_for(user, None)
+    if shipment["warehouse_id"] != warehouse_id:
+        raise AppError(403, "FORBIDDEN", "Shipment belongs to another warehouse.")
+    if shipment["status"] in ("COMPLETED", "RECEIVED"):
+        raise AppError(409, "SHIPMENT_ALREADY_COMPLETED", "This shipment has already been received.")
+    if shipment["status"] != "RECEIVING":
+        raise AppError(409, "INVALID_SHIPMENT_STATUS", "Find the shipment by tracking or ticket before completing it.")
+
+    expected = {item["sku"].upper(): item["expected_quantity"] for item in shipment["expected_items"]}
+    received = []
+    for item in payload.items:
+        product = None
+        if item.barcode and item.barcode.strip():
+            product = await product_repo.find_one({"barcode": item.barcode.strip(), "is_active": True})
+            if not product:
+                raise AppError(404, "PRODUCT_NOT_FOUND", f"No active product matches barcode {item.barcode.strip()}.")
+        if item.sku and item.sku.strip():
+            sku_product = await product_repo.find_one({"sku": item.sku.strip().upper(), "is_active": True})
+            if product and (not sku_product or product["sku"] != sku_product["sku"]):
+                raise AppError(400, "PRODUCT_MISMATCH", "Scanned barcode does not match the selected product.")
+            product = product or sku_product
+        if not product or product["sku"] not in expected:
+            raise AppError(400, "UNEXPECTED_PRODUCT", "Product is not expected on this inbound shipment.")
+        good = item.received_quantity - item.damaged_quantity
+        difference = item.received_quantity - expected[product["sku"]]
+        received.append({
+            "sku": product["sku"], "product_name": product["name"], "barcode": product.get("barcode"),
+            "expected_quantity": expected[product["sku"]], "received_quantity": item.received_quantity,
+            "good_quantity": good, "damaged_quantity": item.damaged_quantity,
+            "difference": difference,
+            "quantity_status": "MATCHED" if difference == 0 else ("SHORT_RECEIVED" if difference < 0 else "OVER_RECEIVED"),
+        })
+    actual_skus = [item["sku"] for item in received]
+    if len(actual_skus) != len(set(actual_skus)):
+        raise AppError(400, "DUPLICATE_SKU", "Each expected product can be received only once.")
+    if set(actual_skus) != set(expected):
+        raise AppError(400, "MISSING_EXPECTED_PRODUCT", "Receive every expected product before completing the shipment.")
+
+    claim = await get_database().inbound_shipments.update_one(
+        {"_id": ObjectId(record_id), "status": "RECEIVING"},
+        {"$set": {"status": "COMPLETING", "updated_at": datetime.now(timezone.utc)}},
+    )
+    if claim.modified_count != 1:
+        raise AppError(409, "SHIPMENT_ALREADY_COMPLETED", "Shipment is already being completed.")
+    applied = []
+    try:
+        for item in received:
+            changes = {"on_hand_quantity": item["received_quantity"], "damaged_quantity": item["damaged_quantity"]}
+            await change_quantities(
+                warehouse_id, item["sku"], changes, "INBOUND", "INBOUND_SHIPMENT",
+                shipment["shipment_id"], user, transaction_quantity=item["received_quantity"],
+            )
+            applied.append((item["sku"], changes))
+    except Exception:
+        for sku, changes in applied:
+            await get_database().inventory.update_one({"warehouse_id": warehouse_id, "sku": sku}, {"$inc": {field: -value for field, value in changes.items()}})
+        await shipment_repo.update(record_id, {"status": "RECEIVING", "updated_at": datetime.now(timezone.utc)})
+        raise
+
+    now = datetime.now(timezone.utc)
+    for item in received:
+        if item["damaged_quantity"]:
+            report = await damage_repo.create(DamageReport(
+                damage_report_id=f"DMG-{uuid4().hex[:10].upper()}", shipment_id=shipment["shipment_id"],
+                warehouse_id=warehouse_id, sku=item["sku"], damage_quantity=item["damaged_quantity"],
+                damage_type="OTHER", damage_reason="Recorded during expected inbound receiving",
+                reported_by=user.id, reported_at=now.isoformat(),
+            ).to_document())
+            await record(user, "REPORT_DAMAGE", "DAMAGE_REPORT", report["id"], warehouse_id, new=report)
+    updated = await shipment_repo.update(record_id, {
+        "received_items": received, "received_by": user.id, "received_at": now.isoformat(),
+        "completed_at": now.isoformat(), "status": "COMPLETED", "updated_at": now,
+    })
+    await record(user, "COMPLETE", "INBOUND_SHIPMENT", record_id, warehouse_id, shipment, updated)
+    return updated
 
 
 async def complete_receiving(payload: DirectReceiptCreate, user: User) -> dict:

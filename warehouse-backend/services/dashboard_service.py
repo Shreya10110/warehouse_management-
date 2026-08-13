@@ -47,8 +47,9 @@ async def summary(user: User, audience: str) -> dict:
             "quarantine_count": response["quarantine_stock"],
         })
     if audience == "outbound":
-        for status in ("RESERVED", "PICKING", "PICKED", "PACKED", "SHIPPED"):
+        for status in ("CREATED", "PICKING", "PICKED", "PACKED", "SHIPPED"):
             response[status.lower()] = sum(1 for item in orders if item["status"] == status)
+        response["reserved"] = response["created"]
         response["ready_to_ship"] = response["packed"]
         response["shipped_today"] = sum(1 for item in orders if item["status"] == "SHIPPED" and str(item.get("updated_at", "")).startswith(today))
     return response
