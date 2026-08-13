@@ -21,7 +21,7 @@ export default function InboundPage({ mode = 'all' }) {
   const { data: warehouses = [] } = useApi(api.warehouses, [])
   const { data: products = [], loading: productsLoading, error: productError } = useApi(api.products, [])
   const activeProducts = useMemo(() => (products ?? []).filter((product) => product.is_active), [products])
-  const assignedWarehouse = warehouses.find((warehouse) => warehouse.id === user.warehouse_id)
+  const assignedWarehouse = (warehouses ?? []).find((warehouse) => warehouse.id === user.warehouse_id)
   const [open, setOpen] = useState(mode === 'receive')
   const [form, setForm] = useState(blankReceipt)
   const [busy, setBusy] = useState(false)
@@ -135,7 +135,7 @@ export default function InboundPage({ mode = 'all' }) {
           <div><p className="text-xs font-bold uppercase tracking-wide text-blue-600">Date and status</p><p className="mt-1 font-semibold text-slate-900">Automatic on completion</p></div>
         </div>
 
-        {user.role === 'OWNER' && <Select label="Warehouse" name="warehouse_id" value={form.warehouse_id} onChange={change} options={warehouses.map((warehouse) => ({ value: warehouse.id, label: `${warehouse.warehouse_code} - ${warehouse.name}` }))} />}
+        {user.role === 'OWNER' && <Select label="Warehouse" name="warehouse_id" value={form.warehouse_id} onChange={change} options={(warehouses ?? []).map((warehouse) => ({ value: warehouse.id, label: `${warehouse.warehouse_code} - ${warehouse.name}` }))} />}
 
         <section>
           <h3 className="mb-4 flex items-center gap-2 font-bold text-slate-950"><Truck className="h-5 w-5 text-blue-600" /> Delivery details</h3>
