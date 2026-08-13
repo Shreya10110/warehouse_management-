@@ -1,4 +1,4 @@
-import { apiRequest } from './client.js'
+import { apiRequest, uploadRequest } from './client.js'
 
 export const api = {
   dashboard: (role) => apiRequest(`/dashboard/${role}`),
@@ -19,6 +19,7 @@ export const api = {
   completeShipment: (id, body) => apiRequest(`/inbound/shipments/${id}/complete`, { method: 'POST', body: JSON.stringify(body) }),
   damageReports: () => apiRequest('/damage-reports'),
   resolveDamage: (id, resolution) => apiRequest(`/damage-reports/${id}/resolve`, { method: 'POST', body: JSON.stringify({ resolution }) }),
+  uploadDamageImage: (id, file) => uploadRequest(`/damage-reports/${id}/images`, file),
   orders: () => apiRequest('/orders'),
   createOrder: (body) => apiRequest('/orders', { method: 'POST', body: JSON.stringify(body) }),
   assignOrder: (id, warehouseId) => apiRequest(`/orders/${id}/assign-warehouse`, { method: 'POST', body: JSON.stringify({ warehouse_id: warehouseId }) }),

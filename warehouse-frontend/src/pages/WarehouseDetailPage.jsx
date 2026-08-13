@@ -12,14 +12,21 @@ export default function WarehouseDetailPage() {
   const { warehouseId } = useParams()
   const [tab, setTab] = useState('Overview')
   const { data: warehouse, loading, error } = useApi(() => api.warehouse(warehouseId), [warehouseId])
-  const { data: inventory = [] } = useApi(() => api.inventory(`?warehouse=${warehouseId}`), [warehouseId])
-  const { data: employees = [] } = useApi(api.users, [])
-  const { data: shipments = [] } = useApi(api.shipments, [])
-  const { data: orders = [] } = useApi(api.orders, [])
-  const { data: damage = [] } = useApi(api.damageReports, [])
-  const { data: audit = [] } = useApi(api.auditLogs, [])
+  const { data: inventoryData } = useApi(() => api.inventory(`?warehouse=${warehouseId}`), [warehouseId])
+  const { data: employeeData } = useApi(api.users, [])
+  const { data: shipmentData } = useApi(api.shipments, [])
+  const { data: orderData } = useApi(api.orders, [])
+  const { data: damageData } = useApi(api.damageReports, [])
+  const { data: auditData } = useApi(api.auditLogs, [])
   if (loading) return <p className="py-20 text-center text-slate-500">Loading warehouse…</p>
   if (error) return <p className="text-red-600">{error}</p>
+  if (!warehouse) return <p className="py-20 text-center text-slate-500">Warehouse details are unavailable.</p>
+  const inventory = Array.isArray(inventoryData) ? inventoryData : []
+  const employees = Array.isArray(employeeData) ? employeeData : []
+  const shipments = Array.isArray(shipmentData) ? shipmentData : []
+  const orders = Array.isArray(orderData) ? orderData : []
+  const damage = Array.isArray(damageData) ? damageData : []
+  const audit = Array.isArray(auditData) ? auditData : []
   const scope = (items, field = 'warehouse_id') => items.filter((item) => item[field] === warehouseId)
   const scopedEmployees = scope(employees); const scopedShipments = scope(shipments); const scopedOrders = scope(orders, 'assigned_warehouse_id'); const scopedDamage = scope(damage); const scopedAudit = scope(audit)
   const tabs = ['Overview', 'Inventory', 'Inbound', 'Outbound', 'Employees', 'Damage Reports', 'Audit Logs']

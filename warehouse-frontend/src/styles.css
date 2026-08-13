@@ -11,3 +11,8 @@
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; min-height: 100vh; }
 button, input { font: inherit; }
+
+/* Keep every sidebar action reachable on shorter screens. */
+aside.fixed.inset-y-0 { display: flex; flex-direction: column; }
+aside.fixed.inset-y-0 > nav { min-height: 0; flex: 1 1 auto; overflow-y: auto; }
+aside.fixed.inset-y-0 > div:last-child { position: static !important; flex: 0 0 auto; }
