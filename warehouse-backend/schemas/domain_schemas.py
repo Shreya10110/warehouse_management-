@@ -77,6 +77,43 @@ class ShipmentReceive(BaseModel):
     items: list[ReceivedItem] = Field(min_length=1)
 
 
+class DirectReceiptItem(BaseModel):
+    """Worker-entered quantities for one directly received product."""
+    sku: str | None = None
+    barcode: str | None = None
+    received_quantity: int = Field(gt=0)
+    damaged_quantity: int = Field(default=0, ge=0)
+
+    @model_validator(mode="after")
+    def validate_item(self) -> "DirectReceiptItem":
+        """Require a product identifier and keep damage within the physical count."""
+        if not (self.sku and self.sku.strip()) and not (self.barcode and self.barcode.strip()):
+            raise ValueError("Select a product or scan a barcode")
+        if self.damaged_quantity > self.received_quantity:
+            raise ValueError("Damaged quantity cannot exceed received quantity")
+        return self
+
+
+class DirectReceiptCreate(BaseModel):
+    """One-step inbound receipt whose derived fields are calculated by the server."""
+    warehouse_id: str | None = None
+    source_type: Literal["CARRIER", "MANUAL_DROP"]
+    tracking_number: str | None = None
+    ticket_number: str | None = None
+    supplier_name: str = Field(min_length=2)
+    supplier_reference: str | None = None
+    items: list[DirectReceiptItem] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_reference(self) -> "DirectReceiptCreate":
+        """Require the delivery identifier that matches the selected arrival type."""
+        if self.source_type == "CARRIER" and not self.tracking_number:
+            raise ValueError("Carrier deliveries require a tracking number")
+        if self.source_type == "MANUAL_DROP" and not self.ticket_number:
+            raise ValueError("Seller drop-offs require a ticket number")
+        return self
+
+
 class DamageCreate(BaseModel):
     """Damage report payload for an inbound shipment line."""
     sku: str

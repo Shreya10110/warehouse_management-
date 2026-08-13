@@ -65,9 +65,12 @@ async def update_warehouse(record_id: str, values: dict, user: User) -> dict:
 async def create_product(payload: ProductCreate, user: User) -> dict:
     """Create a globally unique SKU master record."""
     sku = payload.sku.strip().upper()
+    barcode = payload.barcode.strip() if payload.barcode and payload.barcode.strip() else None
     if await product_repo.find_one({"sku": sku}):
         raise AppError(409, "DUPLICATE_SKU", "SKU already exists.")
-    created = await product_repo.create(Product(**(payload.model_dump() | {"sku": sku})).to_document())
+    if barcode and await product_repo.find_one({"barcode": barcode}):
+        raise AppError(409, "DUPLICATE_BARCODE", "Barcode already belongs to another product.")
+    created = await product_repo.create(Product(**(payload.model_dump() | {"sku": sku, "barcode": barcode})).to_document())
     await record(user, "CREATE", "PRODUCT", created["id"], None, new=created)
     return created
 

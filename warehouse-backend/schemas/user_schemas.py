@@ -40,3 +40,8 @@ class UserUpdate(BaseModel):
         if self.role != UserRole.OWNER and not self.warehouse_id:
             raise ValueError(f"{self.role} must have a warehouse_id")
         return self
+
+
+class RejectionReason(BaseModel):
+    """Reason supplied when an owner or manager rejects a registration."""
+    reason: str = Field(min_length=3, max_length=500)

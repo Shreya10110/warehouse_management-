@@ -19,6 +19,14 @@ class UserRole(StrEnum):
     OUTBOUND = "OUTBOUND"
 
 
+class ApprovalStatus(StrEnum):
+    """Registration and credential approval states for warehouse accounts."""
+    APPROVED = "APPROVED"
+    PENDING_OWNER_APPROVAL = "PENDING_OWNER_APPROVAL"
+    PENDING_MANAGER_APPROVAL = "PENDING_MANAGER_APPROVAL"
+    REJECTED = "REJECTED"
+
+
 class User(BaseModel):
     """Persisted user record with role-to-warehouse invariants."""
     id: str = Field(default_factory=lambda: str(ObjectId()), alias="_id")
@@ -30,6 +38,10 @@ class User(BaseModel):
     role: UserRole
     warehouse_id: str | None = None
     is_active: bool = True
+    approval_status: ApprovalStatus = ApprovalStatus.APPROVED
+    approved_by: str | None = None
+    approved_at: datetime | None = None
+    rejection_reason: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     last_login: datetime | None = None

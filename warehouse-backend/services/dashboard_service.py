@@ -42,7 +42,7 @@ async def summary(user: User, audience: str) -> dict:
         response.update({
             "todays_shipments": response["inbound_today"],
             "pending_inspections": sum(1 for item in shipments if item["status"] in ("RECEIVING", "INSPECTION")),
-            "completed_today": sum(1 for item in shipments if item["status"] == "COMPLETED" and str(item.get("completed_at", "")).startswith(today)),
+            "completed_today": sum(1 for item in shipments if item["status"] in ("COMPLETED", "RECEIVED") and str(item.get("completed_at", "")).startswith(today)),
             "damaged_items_today": response["damaged_stock"],
             "quarantine_count": response["quarantine_stock"],
         })

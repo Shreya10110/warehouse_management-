@@ -29,7 +29,7 @@ async def get_or_create(warehouse_id: str, sku: str) -> dict:
     return await inventory_repo.create(model.to_document())
 
 
-async def change_quantities(warehouse_id: str, sku: str, changes: dict[str, int], transaction_type: str, reference_type: str, reference_id: str, user: User) -> dict:
+async def change_quantities(warehouse_id: str, sku: str, changes: dict[str, int], transaction_type: str, reference_type: str, reference_id: str, user: User, transaction_quantity: int | None = None) -> dict:
     """Apply validated stock changes and create transaction and audit history."""
     item = await get_or_create(warehouse_id, sku)
     before = {key: item.get(key, 0) for key in ("on_hand_quantity", "reserved_quantity", "damaged_quantity", "quarantine_quantity")}
@@ -40,7 +40,7 @@ async def change_quantities(warehouse_id: str, sku: str, changes: dict[str, int]
     updated = await inventory_repo.update(item["id"], after)
     transaction = InventoryTransaction(
         warehouse_id=warehouse_id, sku=sku, transaction_type=transaction_type,
-        quantity=sum(abs(value) for value in changes.values()), before_values=before,
+        quantity=transaction_quantity if transaction_quantity is not None else sum(abs(value) for value in changes.values()), before_values=before,
         after_values={key: after[key] for key in before}, reference_type=reference_type,
         reference_id=reference_id, performed_by=user.id,
     )

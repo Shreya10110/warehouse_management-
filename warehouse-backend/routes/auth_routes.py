@@ -4,9 +4,27 @@ from controllers import auth_controller
 from dependencies.auth import bearer, get_current_user
 from fastapi.security import HTTPAuthorizationCredentials
 from models.user_model import User
-from schemas.auth_schemas import LoginRequest, LoginResponse, LogoutResponse, UserResponse
+from schemas.auth_schemas import LoginRequest, LoginResponse, LogoutResponse, SignupRequest, SignupResponse, UserResponse
+from cruds.base_crud import CRUDRepository
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+warehouse_repo = CRUDRepository("warehouses")
+
+
+@router.get("/signup/warehouses")
+async def signup_warehouses():
+    """List safe active warehouse choices for the public registration form."""
+    warehouses = await warehouse_repo.list({"is_active": True}, limit=200)
+    return [
+        {"id": item["id"], "warehouse_code": item["warehouse_code"], "name": item["name"], "city": item["city"], "state": item["state"]}
+        for item in warehouses
+    ]
+
+
+@router.post("/signup", response_model=SignupResponse, status_code=status.HTTP_201_CREATED)
+async def signup(payload: SignupRequest) -> SignupResponse:
+    """Create a pending manager, inbound, or outbound registration."""
+    return await auth_controller.signup(payload)
 
 
 @router.post("/login", response_model=LoginResponse)

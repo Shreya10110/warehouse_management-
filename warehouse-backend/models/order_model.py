@@ -20,3 +20,4 @@ class Order(MongoModel):
     picked_by: str | None = None
     picked_at: str | None = None
     picked_items: list[dict[str, Any]] = Field(default_factory=list)
+    package_id: str | None = None

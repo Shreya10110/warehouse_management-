@@ -9,6 +9,7 @@ async def ensure_indexes() -> None:
     await database.users.create_index([("email", ASCENDING)], unique=True)
     await database.warehouses.create_index([("warehouse_code", ASCENDING)], unique=True)
     await database.products.create_index([("sku", ASCENDING)], unique=True)
+    await database.products.create_index([("barcode", ASCENDING)], unique=True, partialFilterExpression={"barcode": {"$type": "string"}})
     await database.inventory.create_index([("warehouse_id", ASCENDING), ("sku", ASCENDING)], unique=True)
     await database.inbound_shipments.create_index([("tracking_number", ASCENDING)], unique=True, partialFilterExpression={"tracking_number": {"$type": "string"}})
     await database.inbound_shipments.create_index([("ticket_number", ASCENDING)], unique=True, partialFilterExpression={"ticket_number": {"$type": "string"}})

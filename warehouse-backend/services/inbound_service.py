@@ -8,7 +8,7 @@ from cruds.base_crud import CRUDRepository
 from models.damage_report_model import DamageReport
 from models.inbound_shipment_model import InboundShipment
 from models.user_model import User
-from schemas.domain_schemas import DamageCreate, ShipmentCreate, ShipmentReceive
+from schemas.domain_schemas import DamageCreate, DirectReceiptCreate, ShipmentCreate, ShipmentReceive
 from services.audit_service import record
 from services.inventory_service import change_quantities, product_repo
 
@@ -46,6 +46,85 @@ async def create_shipment(payload: ShipmentCreate, user: User) -> dict:
     created = await shipment_repo.create(model.to_document())
     await record(user, "CREATE", "INBOUND_SHIPMENT", created["id"], warehouse_id, new=created)
     return created
+
+
+async def complete_receiving(payload: DirectReceiptCreate, user: User) -> dict:
+    """Validate and post a direct worker receipt with all derived fields server-side."""
+    warehouse_id = warehouse_for(user, payload.warehouse_id)
+    if payload.tracking_number and await shipment_repo.find_one({"tracking_number": payload.tracking_number}):
+        raise AppError(409, "SHIPMENT_ALREADY_RECEIVED", "This tracking number has already been received.")
+    if payload.ticket_number and await shipment_repo.find_one({"ticket_number": payload.ticket_number}):
+        raise AppError(409, "SHIPMENT_ALREADY_RECEIVED", "This ticket number has already been received.")
+
+    normalized_items = []
+    for item in payload.items:
+        product = None
+        if item.barcode and item.barcode.strip():
+            product = await product_repo.find_one({"barcode": item.barcode.strip()})
+            if not product:
+                raise AppError(404, "PRODUCT_NOT_FOUND", f"No active product matches barcode {item.barcode.strip()}. Ask the owner to create it in Products / SKUs.")
+        if item.sku and item.sku.strip():
+            sku_product = await product_repo.find_one({"sku": item.sku.strip().upper()})
+            if product and (not sku_product or sku_product["sku"] != product["sku"]):
+                raise AppError(400, "PRODUCT_MISMATCH", "The scanned barcode does not match the selected product.")
+            product = product or sku_product
+        if not product or not product.get("is_active", True):
+            identifier = item.barcode or item.sku
+            raise AppError(404, "PRODUCT_NOT_FOUND", f"No active product matches {identifier}. Ask the owner to create it in Products / SKUs.")
+        good_quantity = item.received_quantity - item.damaged_quantity
+        normalized_items.append({
+            "sku": product["sku"], "product_name": product["name"], "barcode": product.get("barcode"),
+            "received_quantity": item.received_quantity, "good_quantity": good_quantity,
+            "damaged_quantity": item.damaged_quantity, "quarantine_quantity": 0,
+        })
+    skus = [item["sku"] for item in normalized_items]
+    if len(skus) != len(set(skus)):
+        raise AppError(400, "DUPLICATE_SKU", "Each product can appear only once on a receipt.")
+
+    model = InboundShipment(
+        shipment_id=f"IN-{uuid4().hex[:10].upper()}", warehouse_id=warehouse_id,
+        source_type=payload.source_type, tracking_number=payload.tracking_number,
+        ticket_number=payload.ticket_number, supplier_name=payload.supplier_name,
+        supplier_reference=payload.supplier_reference, status="RECEIVING", expected_items=[],
+        received_items=normalized_items, created_by=user.id, received_by=user.id,
+    )
+    created = await shipment_repo.create(model.to_document())
+    applied = []
+    try:
+        for item in normalized_items:
+            changes = {"on_hand_quantity": item["received_quantity"], "damaged_quantity": item["damaged_quantity"]}
+            await change_quantities(
+                warehouse_id, item["sku"], changes, "INBOUND", "INBOUND_SHIPMENT",
+                created["shipment_id"], user, transaction_quantity=item["received_quantity"],
+            )
+            applied.append((item["sku"], changes))
+    except Exception:
+        for sku, changes in applied:
+            await get_database().inventory.update_one(
+                {"warehouse_id": warehouse_id, "sku": sku},
+                {"$inc": {field: -quantity for field, quantity in changes.items()}},
+            )
+        await shipment_repo.update(created["id"], {"status": "FAILED", "updated_at": datetime.now(timezone.utc)})
+        raise
+
+    now = datetime.now(timezone.utc)
+    for item in normalized_items:
+        if item["damaged_quantity"]:
+            damage = DamageReport(
+                damage_report_id=f"DMG-{uuid4().hex[:10].upper()}", shipment_id=created["shipment_id"],
+                warehouse_id=warehouse_id, sku=item["sku"], damage_quantity=item["damaged_quantity"],
+                damage_type="OTHER", damage_reason="Recorded during inbound receiving",
+                notes="Automatically created from the completed receipt.", reported_by=user.id,
+                reported_at=now.isoformat(),
+            )
+            report = await damage_repo.create(damage.to_document())
+            await record(user, "REPORT_DAMAGE", "DAMAGE_REPORT", report["id"], warehouse_id, new=report)
+    updated = await shipment_repo.update(created["id"], {
+        "status": "RECEIVED", "received_by": user.id, "received_at": now.isoformat(),
+        "completed_at": now.isoformat(), "updated_at": now,
+    })
+    await record(user, "COMPLETE_RECEIVING", "INBOUND_SHIPMENT", created["id"], warehouse_id, created, updated)
+    return updated
 
 
 async def receive_shipment(record_id: str, payload: ShipmentReceive, user: User) -> dict:

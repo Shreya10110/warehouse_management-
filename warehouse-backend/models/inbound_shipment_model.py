@@ -11,6 +11,7 @@ class ShipmentStatus(StrEnum):
     RECEIVING = "RECEIVING"
     INSPECTION = "INSPECTION"
     COMPLETED = "COMPLETED"
+    RECEIVED = "RECEIVED"
 
 
 class InboundShipment(MongoModel):

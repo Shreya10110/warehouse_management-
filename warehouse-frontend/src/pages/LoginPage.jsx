@@ -1,50 +1,12 @@
-import { Boxes, LoaderCircle, LockKeyhole, Mail } from 'lucide-react'
+import { ArrowRight, Boxes, LoaderCircle, LockKeyhole, Mail, Sparkles, Zap } from 'lucide-react'
 import { useState } from 'react'
-import { Navigate, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { homeForRole } from '../utils/roleRoutes.js'
 
 export default function LoginPage() {
-  const { user, login } = useAuth()
-  const navigate = useNavigate()
-  const [form, setForm] = useState({ email: '', password: '' })
-  const [error, setError] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-
+  const { user, login } = useAuth(); const navigate = useNavigate(); const [form, setForm] = useState({ email: '', password: '' }); const [error, setError] = useState(''); const [submitting, setSubmitting] = useState(false)
   if (user) return <Navigate to={homeForRole(user.role)} replace />
-
-  async function handleSubmit(event) {
-    event.preventDefault()
-    setError('')
-    setSubmitting(true)
-    try {
-      const authenticatedUser = await login(form)
-      navigate(homeForRole(authenticatedUser.role), { replace: true })
-    } catch (requestError) {
-      setError(requestError.message)
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <main className="grid min-h-screen lg:grid-cols-2">
-      <section className="hidden bg-slate-950 p-16 text-white lg:flex lg:flex-col lg:justify-between">
-        <div className="flex items-center gap-3 text-lg font-bold"><Boxes className="text-blue-400" /> WMS</div>
-        <div><p className="text-sm font-semibold uppercase tracking-[0.24em] text-blue-400">Operations, unified</p><h1 className="mt-4 max-w-xl text-5xl font-bold leading-tight">Every warehouse. Every movement. One reliable system.</h1></div>
-        <p className="text-sm text-slate-400">Secure role-based access for owners, managers, inbound and outbound teams.</p>
-      </section>
-      <section className="flex items-center justify-center bg-slate-50 p-6">
-        <form onSubmit={handleSubmit} className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-          <div className="mb-8 lg:hidden"><span className="font-bold text-slate-950">WMS</span></div>
-          <h2 className="text-3xl font-bold text-slate-950">Welcome back</h2>
-          <p className="mt-2 text-slate-500">Sign in to your warehouse workspace.</p>
-          {error && <div role="alert" className="mt-6 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
-          <label className="mt-7 block text-sm font-semibold text-slate-700">Email address<div className="relative mt-2"><Mail className="absolute left-3 top-3 h-5 w-5 text-slate-400" /><input type="email" autoComplete="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full rounded-lg border border-slate-300 py-2.5 pl-11 pr-3 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" placeholder="you@company.com" /></div></label>
-          <label className="mt-5 block text-sm font-semibold text-slate-700">Password<div className="relative mt-2"><LockKeyhole className="absolute left-3 top-3 h-5 w-5 text-slate-400" /><input type="password" autoComplete="current-password" required minLength="8" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="w-full rounded-lg border border-slate-300 py-2.5 pl-11 pr-3 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" placeholder="Enter your password" /></div></label>
-          <button disabled={submitting} className="mt-7 flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60">{submitting && <LoaderCircle className="h-5 w-5 animate-spin" />}{submitting ? 'Signing in…' : 'Sign in'}</button>
-        </form>
-      </section>
-    </main>
-  )
+  async function handleSubmit(event) { event.preventDefault(); setError(''); setSubmitting(true); try { const authenticatedUser = await login(form); navigate(homeForRole(authenticatedUser.role), { replace: true }) } catch (requestError) { setError(requestError.message) } finally { setSubmitting(false) } }
+  return <main className="grid min-h-screen lg:grid-cols-[1.08fr_0.92fr]"><section className="relative hidden overflow-hidden bg-slate-950 p-14 text-white lg:flex lg:flex-col lg:justify-between"><div className="absolute -left-24 top-32 h-96 w-96 rounded-full bg-blue-600/30 blur-3xl" /><div className="absolute -right-24 bottom-12 h-80 w-80 rounded-full bg-cyan-500/20 blur-3xl" /><div className="relative flex items-center gap-3 text-lg font-black"><span className="rounded-xl bg-blue-600 p-2.5"><Boxes /></span> Whitfield Fulfillment</div><div className="relative max-w-2xl"><p className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.24em] text-blue-400"><Sparkles className="h-4 w-4" /> Your shift starts here</p><h1 className="mt-5 text-6xl font-black leading-[1.04] tracking-tight">Move smart.<br />Work strong.<br /><span className="text-blue-400">Finish proud.</span></h1><p className="mt-6 max-w-xl text-lg leading-relaxed text-slate-300">Welcome to Whitfield Fulfillment—where every scan, shipment, and decision keeps the day moving forward.</p><div className="mt-9 flex gap-6 text-sm font-semibold text-slate-300"><span className="flex items-center gap-2"><Zap className="h-4 w-4 text-amber-400" /> Fast operations</span><span className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-cyan-400" /> One focused team</span></div></div><p className="relative text-sm text-slate-400">Have a powerful workday. Make every movement count.</p></section><section className="flex items-center justify-center bg-slate-50 p-6 sm:p-10"><div className="w-full max-w-md"><div className="mb-8 lg:hidden"><div className="flex items-center gap-3 text-lg font-black text-slate-950"><span className="rounded-xl bg-blue-600 p-2 text-white"><Boxes /></span> Whitfield Fulfillment</div></div><form onSubmit={handleSubmit} className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm sm:p-9"><p className="text-xs font-bold uppercase tracking-[0.2em] text-blue-600">Welcome to your workspace</p><h2 className="mt-2 text-4xl font-black tracking-tight text-slate-950">Let’s make today count.</h2><p className="mt-3 text-slate-500">Sign in and pick up right where your team needs you.</p>{error && <div role="alert" className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm leading-relaxed text-red-700">{error}</div>}<label className="mt-7 block text-sm font-semibold text-slate-700">Email address<div className="relative mt-2"><Mail className="absolute left-3 top-3 h-5 w-5 text-slate-400" /><input type="email" autoComplete="email" required value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} className="w-full rounded-xl border border-slate-300 py-3 pl-11 pr-3 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" placeholder="you@whitfield.com" /></div></label><label className="mt-5 block text-sm font-semibold text-slate-700">Password<div className="relative mt-2"><LockKeyhole className="absolute left-3 top-3 h-5 w-5 text-slate-400" /><input type="password" autoComplete="current-password" required minLength="8" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} className="w-full rounded-xl border border-slate-300 py-3 pl-11 pr-3 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" placeholder="Enter your password" /></div></label><button disabled={submitting} className="mt-7 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3.5 font-bold text-white hover:bg-blue-700 disabled:opacity-60">{submitting && <LoaderCircle className="h-5 w-5 animate-spin" />}{submitting ? 'Opening your workspace...' : 'Start my workday'}{!submitting && <ArrowRight className="h-5 w-5" />}</button><div className="mt-7 border-t border-slate-200 pt-6 text-center"><p className="text-sm text-slate-500">New manager or employee?</p><Link to="/signup" className="mt-2 inline-flex items-center gap-2 font-bold text-blue-600 hover:text-blue-700">Request Whitfield access <ArrowRight className="h-4 w-4" /></Link></div></form></div></section></main>
 }

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, File, UploadFile
 from core.exceptions import AppError
 from dependencies.auth import get_current_user, require_owner_or_manager
 from models.user_model import User
-from schemas.domain_schemas import DamageCreate, ResolutionRequest, ShipmentCreate, ShipmentReceive
+from schemas.domain_schemas import DamageCreate, DirectReceiptCreate, ResolutionRequest, ShipmentCreate, ShipmentReceive
 from services import inbound_service
 from services.audit_service import record
 from services.image_service import upload_image
@@ -25,6 +25,14 @@ async def create_shipment(payload: ShipmentCreate, user: User = Depends(get_curr
     if user.role.value not in ("OWNER", "MANAGER", "INBOUND"):
         raise AppError(403, "FORBIDDEN", "Outbound staff cannot create inbound shipments.")
     return await inbound_service.create_shipment(payload, user)
+
+
+@router.post("/inbound/receipts")
+async def complete_receiving(payload: DirectReceiptCreate, user: User = Depends(get_current_user)):
+    """Receive inspected stock in one worker action with server-derived fields."""
+    if user.role.value not in ("OWNER", "MANAGER", "INBOUND"):
+        raise AppError(403, "FORBIDDEN", "Outbound staff cannot receive inbound shipments.")
+    return await inbound_service.complete_receiving(payload, user)
 
 
 @router.get("/inbound/shipments")

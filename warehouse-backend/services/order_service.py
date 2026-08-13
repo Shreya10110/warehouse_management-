@@ -190,7 +190,7 @@ async def pack(record_id: str, payload: PackageCreate, user: User) -> dict:
         packed_by=user.id, packed_at=datetime.now(timezone.utc).isoformat(), **payload.model_dump(),
     )
     created = await package_repo.create(package.to_document())
-    await transition(record_id, ("PICKED",), "PACKED", user)
+    await transition(record_id, ("PICKED",), "PACKED", user, {"package_id": created["id"]})
     await record(user, "PACK", "PACKAGE", created["id"], order["assigned_warehouse_id"], new=created)
     return created
 
