@@ -10,3 +10,5 @@ bcrypt==4.3.0
 python-dotenv==1.1.1
 cloudinary==1.44.1
 python-multipart==0.0.20
+qrcode[pil]==8.2
+pytest==9.1.1
