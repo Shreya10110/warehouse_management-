@@ -1,3 +1,5 @@
+"""MongoDB connection lifecycle shared by repositories and services."""
+
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 
 from core.config import settings
@@ -28,3 +30,21 @@ def get_database() -> AsyncIOMotorDatabase:
     if database is None:
         raise RuntimeError("MongoDB is not connected")
     return database
+
+
+async def database_health() -> dict[str, str]:
+    """Ping MongoDB and return the active logical database name."""
+    if client is None or database is None:
+        raise RuntimeError("MongoDB is not connected")
+    await client.admin.command("ping")
+    return {"status": "connected", "name": database.name}
+
+
+__all__ = [
+    "client",
+    "database",
+    "connect_to_mongo",
+    "close_mongo_connection",
+    "database_health",
+    "get_database",
+]

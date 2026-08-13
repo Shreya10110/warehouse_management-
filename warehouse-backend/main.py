@@ -5,19 +5,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import settings
-from core.database import close_mongo_connection, connect_to_mongo
+from core.database import close_mongo_connection, connect_to_mongo, database_health
+from core.database.indexes import ensure_indexes
 from core.exceptions import register_exception_handlers
 from core.logger import configure_logging
-from core.indexes import ensure_indexes
-from routes.audit_routes import router as audit_router
-from routes.approval_routes import router as approval_router
-from routes.auth_routes import router as auth_router
-from routes.dashboard_routes import router as dashboard_router
-from routes.inbound_routes import router as inbound_router
-from routes.inventory_routes import router as inventory_router
-from routes.issue_routes import router as issue_router
-from routes.master_routes import router as master_router
-from routes.order_routes import router as order_router
+from core.apis.routes import api_routers
 
 logger = configure_logging()
 
@@ -52,11 +44,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 register_exception_handlers(app)
-for api_router in (auth_router, approval_router, master_router, inventory_router, inbound_router, order_router, issue_router, audit_router, dashboard_router):
+for api_router in api_routers:
     app.include_router(api_router, prefix=settings.api_prefix)
 
 
 @app.get("/health", tags=["System"])
-async def health() -> dict[str, str]:
+async def health() -> dict[str, str | dict[str, str]]:
     """Return process and database readiness for deployment checks."""
-    return {"status": "healthy", "database": "connected"}
+    return {"status": "healthy", "database": await database_health()}

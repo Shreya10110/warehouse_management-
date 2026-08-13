@@ -1,3 +1,5 @@
+"""MongoDB uniqueness, lookup, and retention indexes."""
+
 from pymongo import ASCENDING, DESCENDING
 
 from core.database import get_database
