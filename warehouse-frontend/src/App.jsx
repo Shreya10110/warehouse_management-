@@ -16,6 +16,8 @@ import DamageReportsPage from './pages/DamageReportsPage.jsx'
 import AuditLogsPage from './pages/AuditLogsPage.jsx'
 import SettingsPage from './pages/SettingsPage.jsx'
 import WarehouseDetailPage from './pages/WarehouseDetailPage.jsx'
+import SellersPage from './pages/SellersPage.jsx'
+import IssuesPage from './pages/IssuesPage.jsx'
 
 export default function App() {
   return <AuthProvider><Routes>
@@ -31,6 +33,8 @@ export default function App() {
         <Route path="/admin/orders" element={<OrdersPage />} />
         <Route path="/admin/damage" element={<DamageReportsPage />} />
         <Route path="/admin/products" element={<ProductsPage />} />
+        <Route path="/admin/sellers" element={<SellersPage />} />
+        <Route path="/admin/issues" element={<IssuesPage />} />
         <Route path="/admin/employees" element={<EmployeesPage />} />
         <Route path="/admin/audit" element={<AuditLogsPage />} />
         <Route path="/admin/settings" element={<SettingsPage />} />
@@ -45,6 +49,7 @@ export default function App() {
         <Route path="/manager/team" element={<EmployeesPage />} />
         <Route path="/manager/audit" element={<AuditLogsPage />} />
         <Route path="/manager/approvals" element={<ApprovalsPage />} />
+        <Route path="/manager/issues" element={<IssuesPage />} />
       </Route>
       <Route element={<ProtectedRoute roles={['INBOUND']} />}>
         <Route path="/employee/inbound" element={<DashboardPage />} />
@@ -57,7 +62,7 @@ export default function App() {
       <Route element={<ProtectedRoute roles={['OUTBOUND']} />}>
         <Route path="/employee/outbound" element={<DashboardPage />} />
         <Route path="/employee/outbound/orders" element={<OrdersPage />} />
-        <Route path="/employee/outbound/picking" element={<OrdersPage statusFilter="RESERVED,PICKING" />} />
+        <Route path="/employee/outbound/picking" element={<OrdersPage statusFilter="CREATED,PICKING" />} />
         <Route path="/employee/outbound/packing" element={<OrdersPage statusFilter="PICKED" />} />
         <Route path="/employee/outbound/shipping" element={<OrdersPage statusFilter="PACKED" />} />
       </Route>

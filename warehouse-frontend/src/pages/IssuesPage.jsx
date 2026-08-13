@@ -1,0 +1,20 @@
+import { HelpCircle, Plus } from 'lucide-react'
+import { useState } from 'react'
+import { api } from '../api/domain.js'
+import DataTable from '../components/DataTable.jsx'
+import { Field, Select, SubmitButton } from '../components/FormFields.jsx'
+import Modal from '../components/Modal.jsx'
+import PageHeader from '../components/PageHeader.jsx'
+import StatusBadge from '../components/StatusBadge.jsx'
+import { useAuth } from '../context/AuthContext.jsx'
+import { useApi } from '../hooks/useApi.js'
+
+const blank = { category: 'INVENTORY', subject: '', description: '', priority: 'MEDIUM' }
+
+export default function IssuesPage() {
+  const { user } = useAuth(); const { data = [], loading, error, reload } = useApi(api.issues, [])
+  const [open, setOpen] = useState(false); const [form, setForm] = useState(blank); const [busy, setBusy] = useState(false); const [formError, setFormError] = useState('')
+  async function create(event) { event.preventDefault(); setBusy(true); setFormError(''); try { await api.createIssue(form); setOpen(false); setForm(blank); reload() } catch (requestError) { setFormError(requestError.message) } finally { setBusy(false) } }
+  async function decide(row, status) { const response = window.prompt(`Admin response for ${status.toLowerCase()}:`); if (!response) return; try { await api.resolveIssue(row.id, { status, admin_response: response }); reload() } catch (requestError) { setFormError(requestError.message) } }
+  return <><PageHeader eyebrow="Warehouse escalation" title={user.role === 'OWNER' ? 'Manager issues and requests' : 'Report an issue to Admin'} description={user.role === 'OWNER' ? 'Review and decide warehouse-manager escalations.' : 'Request Admin help without accessing another warehouse.'} action={user.role === 'MANAGER' && <button onClick={() => setOpen(true)} className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white"><Plus className="h-4 w-4" /> New issue</button>} />{(error || formError) && <p className="mb-4 text-red-600">{error || formError}</p>}<DataTable rows={data ?? []} empty={loading ? 'Loading issues...' : 'No issues found'} columns={[{ key: 'issue_id', label: 'Issue' }, { key: 'category', label: 'Category' }, { key: 'subject', label: 'Subject' }, { key: 'priority', label: 'Priority', render: (value) => <StatusBadge value={value} /> }, { key: 'status', label: 'Status', render: (value) => <StatusBadge value={value} /> }, { key: 'admin_response', label: 'Admin response', render: (value) => value || 'Awaiting review' }]} actions={user.role === 'OWNER' ? (row) => row.status === 'OPEN' && <div className="flex gap-3"><button onClick={() => decide(row, 'APPROVED')} className="font-semibold text-emerald-600">Approve</button><button onClick={() => decide(row, 'REJECTED')} className="font-semibold text-red-600">Reject</button><button onClick={() => decide(row, 'RESOLVED')} className="font-semibold text-blue-600">Resolve</button></div> : undefined} /><Modal title="Report issue to Admin" open={open} onClose={() => setOpen(false)}><form onSubmit={create} className="space-y-4">{formError && <p className="text-red-600">{formError}</p>}<Select label="Category" name="category" value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })} options={['INVENTORY', 'INBOUND', 'OUTBOUND', 'EMPLOYEE', 'SYSTEM', 'OTHER'].map((value) => ({ value, label: value }))} /><Select label="Priority" name="priority" value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value })} options={['LOW', 'MEDIUM', 'HIGH', 'URGENT'].map((value) => ({ value, label: value }))} /><Field label="Subject" name="subject" value={form.subject} onChange={(event) => setForm({ ...form, subject: event.target.value })} /><Field label="Description" name="description" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /><div className="flex justify-end"><SubmitButton busy={busy}><span className="flex items-center gap-2"><HelpCircle className="h-4 w-4" /> Send to Admin</span></SubmitButton></div></form></Modal></>
+}
