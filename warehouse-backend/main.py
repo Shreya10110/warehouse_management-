@@ -8,8 +8,8 @@ from core.config import settings
 from core.database import close_mongo_connection, connect_to_mongo, database_health
 from core.database.indexes import ensure_indexes
 from core.exceptions import register_exception_handlers
-from core.logger import configure_logging
-from core.apis.routes import api_routers
+from commons.logger import configure_logging
+from core.apis.api import api_routers
 
 logger = configure_logging()
 

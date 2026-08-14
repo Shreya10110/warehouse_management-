@@ -10,24 +10,25 @@ routes -> controllers -> services -> cruds -> MongoDB
 
 ```text
 warehouse-backend/
-|-- main.py                    # Stable uvicorn entry point
+|-- main.py                         # Stable Uvicorn entry point
+|-- commons/                        # Cross-cutting logging and auth exports
 |-- core/
-|   |-- apis/routes/           # FastAPI endpoints grouped by domain
-|   |-- database/
-|   |   |-- __init__.py        # MongoDB connection lifecycle and health ping
-|   |   `-- indexes.py         # Unique, lookup, and TTL indexes
-|   |-- config.py              # Environment-backed settings
-|   |-- security.py            # Password and JWT security
-|   |-- exceptions.py          # Consistent API errors
-|   `-- logger.py              # Application logging
-|-- controllers/               # Request orchestration
-|-- schemas/                   # Request and response validation
-|-- models/                    # MongoDB domain documents
-|-- cruds/                     # Reusable persistence operations
-|-- services/                  # Business workflows and transactions
-|-- dependencies/              # Authentication and role permissions
-|-- scripts/                   # Administration and database checks
-`-- tests/                     # Domain, security, and end-to-end coverage
+|   |-- apis/
+|   |   |-- api.py                  # Router registry exported to main.py
+|   |   |-- routes/                 # FastAPI endpoints grouped by domain
+|   |   `-- schemas/                # Request and response validation
+|   |-- controllers/                # Request orchestration
+|   |-- cruds/                      # Reusable persistence operations
+|   |-- database/                   # MongoDB lifecycle, health, and indexes
+|   |-- dependencies/               # Authentication and role permissions
+|   |-- models/                     # MongoDB domain documents
+|   |-- services/                   # Business workflows and transactions
+|   |-- utils/                      # Small shared helpers
+|   |-- config.py                   # Environment-backed settings
+|   |-- exceptions.py               # Consistent API errors
+|   `-- security.py                 # Password and JWT security
+|-- scripts/                        # Administration and database checks
+`-- tests/                          # Domain, security, and end-to-end coverage
 ```
 
 The public API is unchanged. Frontend URLs, MongoDB collection names, roles,
