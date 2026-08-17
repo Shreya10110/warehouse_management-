@@ -83,6 +83,19 @@ Open `http://localhost:8000/docs` for the complete API. Use a MongoDB replica
 set in production for transactional multi-line reservations; standalone local
 MongoDB installations use the compensated reservation fallback.
 
+## Render deployment
+
+Render currently defaults newly created Python services to Python 3.14. This
+backend pins Python 3.12 through `.python-version`, which is compatible with
+the pinned FastAPI and Pydantic dependencies. Configure the Render web service
+with `warehouse-backend` as its root directory, then use:
+
+```text
+Build command: pip install -r requirements.txt
+Start command: uvicorn main:app --host 0.0.0.0 --port $PORT
+Health check: /health
+```
+
 ## Verification
 
 ```powershell
