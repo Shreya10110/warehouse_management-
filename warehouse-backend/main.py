@@ -10,6 +10,7 @@ from core.database.indexes import ensure_indexes
 from core.exceptions import register_exception_handlers
 from commons.logger import configure_logging
 from core.apis.api import api_routers
+from core.services.auth_service import ensure_bootstrap_owner
 
 logger = configure_logging()
 
@@ -19,7 +20,10 @@ async def lifespan(app: FastAPI):
     """Connect MongoDB and create indexes for the application lifespan."""
     await connect_to_mongo()
     await ensure_indexes()
+    owner = await ensure_bootstrap_owner()
     logger.info("MongoDB connected")
+    if owner:
+        logger.info("Bootstrap Owner created for %s", owner.email)
     yield
     await close_mongo_connection()
     logger.info("MongoDB disconnected")

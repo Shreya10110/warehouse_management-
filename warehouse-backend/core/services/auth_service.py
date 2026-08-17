@@ -25,6 +25,29 @@ async def register_user(payload: UserCreate) -> UserResponse:
     return public_user(user)
 
 
+async def ensure_bootstrap_owner() -> UserResponse | None:
+    """Create the configured first Owner only when the database has no Owner.
+
+    The password is supplied through an environment variable and is hashed
+    before persistence. Existing Owner accounts are never modified.
+    """
+    from core.config import settings
+
+    if not settings.bootstrap_owner_password:
+        return None
+    existing_owner = await get_database().users.find_one({"role": UserRole.OWNER.value})
+    if existing_owner:
+        return None
+    return await register_user(UserCreate(
+        first_name=settings.bootstrap_owner_first_name,
+        last_name=settings.bootstrap_owner_last_name,
+        email=settings.bootstrap_owner_email,
+        mobile=settings.bootstrap_owner_mobile,
+        password=settings.bootstrap_owner_password,
+        role=UserRole.OWNER,
+    ))
+
+
 async def login(payload: LoginRequest) -> LoginResponse:
     """Authenticate an active user and issue role and warehouse JWT claims."""
     user = await find_user_by_email(str(payload.email))

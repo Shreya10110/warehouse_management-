@@ -21,6 +21,16 @@ services:
         value: warehouse_management
       - key: JWT_SECRET_KEY
         generateValue: true
+      - key: BOOTSTRAP_OWNER_EMAIL
+        value: admin@whitfieldfulfillment.com
+      - key: BOOTSTRAP_OWNER_PASSWORD
+        sync: false
+      - key: BOOTSTRAP_OWNER_FIRST_NAME
+        value: Warehouse
+      - key: BOOTSTRAP_OWNER_LAST_NAME
+        value: Owner
+      - key: BOOTSTRAP_OWNER_MOBILE
+        value: 0000000000
       - key: JWT_ALGORITHM
         value: HS256
       - key: ACCESS_TOKEN_EXPIRE_MINUTES

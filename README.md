@@ -213,9 +213,15 @@ CLOUDINARY_CLOUD_NAME=...
 CLOUDINARY_API_KEY=...
 CLOUDINARY_API_SECRET=...
 VITE_API_URL=https://YOUR-BACKEND.onrender.com/api/v1
+BOOTSTRAP_OWNER_PASSWORD=choose-a-private-strong-password
 ```
 
 Never commit those values. Render generates `JWT_SECRET_KEY` automatically.
+On the first successful backend startup, the bootstrap creates an approved
+Owner with email `admin@whitfieldfulfillment.com` only if no Owner exists.
+The password is hashed in MongoDB, is never logged, and existing Owners are
+never overwritten. Remove `BOOTSTRAP_OWNER_PASSWORD` from Render after the
+first Owner has been created.
 After the backend is live, confirm `/health` reports a connected database,
 then clear the frontend build cache and redeploy so Vite embeds its API URL.
 

@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     cloudinary_cloud_name: str = ""
     cloudinary_api_key: str = ""
     cloudinary_api_secret: str = ""
+    bootstrap_owner_email: str = "admin@whitfieldfulfillment.com"
+    bootstrap_owner_password: str = ""
+    bootstrap_owner_first_name: str = "Warehouse"
+    bootstrap_owner_last_name: str = "Owner"
+    bootstrap_owner_mobile: str = "0000000000"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
