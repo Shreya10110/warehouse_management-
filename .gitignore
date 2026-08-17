@@ -1,9 +1,11 @@
 **/__pycache__/
 **/.pytest_cache/
 **/.venv/
+**/venv/
 **/node_modules/
 **/dist/
 warehouse-backend/.env
+warehouse-frontend/.env.local
 *.pyc
 .DS_Store
 .cluade/

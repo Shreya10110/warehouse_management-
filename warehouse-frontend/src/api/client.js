@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000/api/v1'
+const API_URL = (import.meta.env.VITE_API_URL?.trim() || 'http://127.0.0.1:8011/api/v1').replace(/\/+$/, '')
 
 export class ApiError extends Error {
   constructor(message, status, code) {

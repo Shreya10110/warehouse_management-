@@ -123,17 +123,20 @@ warehouse_system/
 |       |-- api/                 # Backend API client
 |       `-- context/             # Authentication state
 |-- warehouse-backend/           # FastAPI application
+|   |-- commons/                 # Shared logging and authentication exports
 |   |-- core/
 |   |   |-- apis/routes/         # API endpoints
-|   |   `-- database/            # MongoDB lifecycle, health, and indexes
-|   |-- controllers/             # Request orchestration
-|   |-- schemas/                 # Request validation
-|   |-- models/                  # MongoDB documents
-|   |-- cruds/                   # Persistence layer
-|   |-- services/                # Business workflows
-|   |-- dependencies/            # Authentication and permissions
+|   |   |-- apis/schemas/        # Request and response validation
+|   |   |-- controllers/         # Request orchestration
+|   |   |-- cruds/               # Persistence layer
+|   |   |-- database/            # MongoDB lifecycle, health, and indexes
+|   |   |-- dependencies/        # Authentication and permissions
+|   |   |-- models/              # MongoDB documents
+|   |   |-- services/            # Business workflows
+|   |   `-- utils/               # Shared helpers
 |   |-- scripts/                 # Database/user administration utilities
 |   `-- tests/                   # Backend tests
+|-- render.yaml                  # Render backend + frontend deployment blueprint
 `-- docker-compose.yml           # MongoDB replica-set setup with persistent storage
 ```
 
@@ -192,6 +195,29 @@ npm run dev -- --host 127.0.0.1 --port 5199
 ```
 
 Open: `http://127.0.0.1:5199`
+
+## Deploy on Render
+
+The repository includes `render.yaml`, which defines both services:
+
+- `warehouse-backend`: FastAPI web service using Python 3.12;
+- `warehouse-frontend`: React/Vite static site with React Router rewrites.
+
+In Render, choose **New > Blueprint**, connect this repository, and use the
+root `render.yaml`. During the initial Blueprint setup, provide these secret
+values when prompted:
+
+```text
+MONGODB_URL=mongodb+srv://...your Atlas URI...
+CLOUDINARY_CLOUD_NAME=...
+CLOUDINARY_API_KEY=...
+CLOUDINARY_API_SECRET=...
+VITE_API_URL=https://YOUR-BACKEND.onrender.com/api/v1
+```
+
+Never commit those values. Render generates `JWT_SECRET_KEY` automatically.
+After the backend is live, confirm `/health` reports a connected database,
+then clear the frontend build cache and redeploy so Vite embeds its API URL.
 
 ## Database safety and inspection
 
