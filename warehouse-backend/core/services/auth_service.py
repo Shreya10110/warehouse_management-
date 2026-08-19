@@ -2,7 +2,6 @@ from pymongo.errors import DuplicateKeyError
 
 from core.exceptions import AppError
 from core.security import create_access_token, decode_access_token, hash_password, verify_password
-from core.database import get_database
 from datetime import datetime, timezone
 from cruds.user_crud import create_user, find_user_by_email, update_last_login
 from models.user_model import ApprovalStatus, User, UserRole
@@ -35,7 +34,9 @@ async def ensure_bootstrap_owner() -> UserResponse | None:
 
     if not settings.bootstrap_owner_password:
         return None
-    existing_owner = await get_database().users.find_one({"role": UserRole.OWNER.value})
+    from cruds.base_crud import CRUDRepository
+
+    existing_owner = await CRUDRepository("users").find_one({"role": UserRole.OWNER.value})
     if existing_owner:
         return None
     return await register_user(UserCreate(

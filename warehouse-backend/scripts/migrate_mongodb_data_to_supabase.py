@@ -6,6 +6,7 @@ existing Supabase password hashes, and never deletes destination records.
 import argparse
 import asyncio
 import json
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -144,18 +145,20 @@ async def migrate_users(
     return user_id_map
 
 
-async def run(apply: bool) -> None:
-    mongo_client = AsyncIOMotorClient(settings.mongodb_url, serverSelectionTimeoutMS=10000)
+async def run(apply: bool, mongo_url: str, mongo_database: str) -> None:
+    if not mongo_url:
+        raise RuntimeError("Pass --mongo-url or set LEGACY_MONGODB_URL for the one-time migration source.")
+    mongo_client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=10000)
     postgres = await asyncpg.connect(get_postgres_dsn(), timeout=20)
     try:
         await mongo_client.admin.command("ping")
-        mongo = mongo_client[settings.mongodb_database]
+        mongo = mongo_client[mongo_database]
         source_documents = {
             collection: await mongo[collection].find({}).to_list(length=None)
             for collection, _ in COLLECTIONS
         }
         print(f"Mode: {'APPLY' if apply else 'DRY RUN'}")
-        print(f"MongoDB database: {settings.mongodb_database}")
+        print(f"MongoDB database: {mongo_database}")
         warehouse_id_map: dict[str, str] = {}
         for item in source_documents["warehouses"]:
             destination_id = await postgres.fetchval(
@@ -205,6 +208,9 @@ async def run(apply: bool) -> None:
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--apply", action="store_true", help="Commit the merge; otherwise only report counts")
+parser.add_argument("--mongo-url", default=os.getenv("LEGACY_MONGODB_URL", ""), help="Legacy MongoDB source URI")
+parser.add_argument("--mongo-database", default=os.getenv("LEGACY_MONGODB_DATABASE", "warehouse_management"))
 
 if __name__ == "__main__":
-    asyncio.run(run(parser.parse_args().apply))
+    args = parser.parse_args()
+    asyncio.run(run(args.apply, args.mongo_url, args.mongo_database))

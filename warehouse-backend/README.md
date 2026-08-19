@@ -1,107 +1,99 @@
-# WMS Backend
+# Warehouse Backend
 
-FastAPI backend for Whitfield Fulfillment. Requests follow this stable flow:
+FastAPI backend for Whitfield Fulfillment. Supabase PostgreSQL is the required
+runtime database. MongoDB is used only by the optional one-time migration tool.
+
+## Request flow
 
 ```text
-routes -> controllers -> services -> cruds -> MongoDB
+routes -> authentication/permissions -> controllers/services -> CRUD repositories
+       -> AsyncPG -> Supabase PostgreSQL
 ```
+
+Expected inbound completion runs inside one PostgreSQL transaction so shipment,
+inventory, transaction, damage, and audit changes roll back together on failure.
 
 ## Structure
 
 ```text
 warehouse-backend/
-|-- main.py                         # Stable Uvicorn entry point
-|-- commons/                        # Cross-cutting logging and auth exports
+|-- main.py                         # FastAPI/Uvicorn entry point
 |-- core/
-|   |-- apis/
-|   |   |-- api.py                  # Router registry exported to main.py
-|   |   |-- routes/                 # FastAPI endpoints grouped by domain
-|   |   `-- schemas/                # Request and response validation
+|   |-- apis/routes/                # REST endpoints
+|   |-- apis/schemas/               # Request validation
 |   |-- controllers/                # Request orchestration
-|   |-- cruds/                      # Reusable persistence operations
-|   |-- database/                   # MongoDB lifecycle, health, and indexes
-|   |-- dependencies/               # Authentication and role permissions
-|   |-- models/                     # MongoDB domain documents
-|   |-- services/                   # Business workflows and transactions
-|   |-- utils/                      # Small shared helpers
-|   |-- config.py                   # Environment-backed settings
-|   |-- exceptions.py               # Consistent API errors
-|   `-- security.py                 # Password and JWT security
-|-- scripts/                        # Administration and database checks
-`-- tests/                          # Domain, security, and end-to-end coverage
+|   |-- cruds/                      # Database-neutral repositories
+|   |-- database/postgres.py        # AsyncPG adapter and transactions
+|   |-- dependencies/               # JWT and role checks
+|   |-- models/                     # Domain models
+|   `-- services/                   # Warehouse workflows
+|-- scripts/                        # Migration, audit, smoke, and admin tools
+|-- supabase_schema.sql             # Tables, repairs, and indexes
+`-- tests/                           # Backend test suite
 ```
 
-The public API is unchanged. Frontend URLs, MongoDB collection names, roles,
-permissions, and warehouse workflows remain the same.
+## Environment
 
-## Database safety
-
-- The logical database is `warehouse_management`.
-- MongoDB data is outside the source-code folders, so reorganizing Python files
-  cannot delete or relocate warehouse records.
-- Docker Compose uses the named volume `mongodb_data`, which survives container
-  recreation and application restarts.
-- Startup creates uniqueness, query, and token-expiry indexes idempotently.
-- `/health` performs a real MongoDB ping and returns the active database name.
-- Secrets and connection strings stay in the ignored `.env` file.
-
-Run the read-only database audit at any time:
-
-```powershell
-python scripts/check_database.py
-```
-
-For recoverable backups, use MongoDB Database Tools and keep the output outside
-the repository:
-
-```powershell
-mongodump --uri="mongodb://localhost:27017" --db=warehouse_management --out="D:\warehouse_backups"
-```
-
-## Local setup
-
-1. Start MongoDB locally on port `27017`, or run the repository Docker Compose
-   configuration.
-2. Copy `.env.example` to `.env`, set a strong `JWT_SECRET_KEY`, and optionally
-   add Cloudinary credentials for damage-image uploads.
-3. Install and run:
-
-   ```powershell
-   python -m venv .venv
-   .venv\Scripts\Activate.ps1
-   pip install -r requirements-dev.txt
-   uvicorn main:app --reload
-   ```
-
-4. Create the first owner when initializing a new database:
-
-   ```powershell
-   python scripts/create_user.py --first-name Warehouse --last-name Owner --email owner@example.com --mobile 9999999999 --password StrongPass123 --role OWNER
-   ```
-
-Open `http://localhost:8000/docs` for the complete API. Use a MongoDB replica
-set in production for transactional multi-line reservations; standalone local
-MongoDB installations use the compensated reservation fallback.
-
-## Render deployment
-
-Render currently defaults newly created Python services to Python 3.14. This
-backend pins Python 3.12 through `.python-version`, which is compatible with
-the pinned FastAPI and Pydantic dependencies. Configure the Render web service
-with `warehouse-backend` as its root directory, then use:
+Copy `.env.example` to the ignored `.env` file and configure:
 
 ```text
-Build command: pip install -r requirements.txt
-Start command: uvicorn main:app --host 0.0.0.0 --port $PORT
-Health check: /health
+SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+SUPABASE_DB_PASSWORD=YOUR_DATABASE_PASSWORD
+SUPABASE_DB_REGION=YOUR_POOLER_REGION
+JWT_SECRET_KEY=YOUR_LONG_RANDOM_SECRET
+CORS_ORIGINS=http://localhost:5200,http://127.0.0.1:5200
 ```
+
+Alternatively, provide a complete `DATABASE_URL`. Cloudinary settings are
+optional unless damage-image uploads are required.
+
+## Install and initialize
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements-dev.txt
+python scripts\migrate_supabase.py
+python scripts\check_supabase.py
+```
+
+## Run
+
+```powershell
+uvicorn main:app --host 127.0.0.1 --port 8012 --reload
+```
+
+- Health: `http://127.0.0.1:8012/health`
+- API documentation: `http://127.0.0.1:8012/docs`
+- API prefix: `/api/v1`
+
+## Useful scripts
+
+```powershell
+# Read-only Supabase schema/repository audit
+python scripts\check_supabase.py
+
+# Apply schema and compatibility repairs
+python scripts\migrate_supabase.py
+
+# Preview and then apply a legacy MongoDB merge
+$env:LEGACY_MONGODB_URL="mongodb://127.0.0.1:27017"
+python scripts\migrate_mongodb_data_to_supabase.py
+python scripts\migrate_mongodb_data_to_supabase.py --apply
+
+# Exercise authenticated Supabase API contracts
+python scripts\smoke_supabase_api.py
+```
+
+Keep database passwords and admin credentials in `.env` or the deployment
+provider's secret store. Do not add them to scripts or documentation.
 
 ## Verification
 
 ```powershell
-pytest tests -q -p no:cacheprovider
+.venv\Scripts\python.exe -m pytest -q
 ```
 
-The integration suite covers authentication, warehouse isolation, receiving,
-inventory movements, order allocation, picking, packing, labels, shipping,
-damage evidence, audits, approvals, and logout revocation.
+The suite covers authentication, permissions, warehouse isolation, receiving,
+inventory, damage handling, fulfilment, approvals, audit logs, and Supabase
+schema compatibility.

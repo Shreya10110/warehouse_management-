@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from core.database import close_mongo_connection, connect_to_mongo, database_health
+from core.database import close_database, connect_database, database_health
 from core.database.postgres import get_pool
 from cruds.base_crud import CRUDRepository
 
@@ -17,7 +17,7 @@ EXPECTED_TABLES = (
 
 
 async def main() -> None:
-    await connect_to_mongo()
+    await connect_database()
     try:
         print(f"Database health: {await database_health()}")
         async with get_pool().acquire() as connection:
@@ -36,7 +36,7 @@ async def main() -> None:
             print(f"- {table}: reachable, {count} rows, sample_read={bool(records)}")
         print("Supabase live audit: successful")
     finally:
-        await close_mongo_connection()
+        await close_database()
 
 
 if __name__ == "__main__":

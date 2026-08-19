@@ -8,14 +8,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from core.apis.schemas.auth_schemas import LoginRequest
 from core.config import settings
-from core.database import close_mongo_connection, connect_to_mongo
+from core.database import close_database, connect_database
 from core.services.auth_service import ensure_bootstrap_owner, login
 
 
 async def run() -> None:
     if not settings.bootstrap_owner_password:
         raise RuntimeError("BOOTSTRAP_OWNER_PASSWORD is required")
-    await connect_to_mongo()
+    await connect_database()
     try:
         created = await ensure_bootstrap_owner()
         authenticated = await login(LoginRequest(
@@ -25,7 +25,7 @@ async def run() -> None:
         action = "created" if created else "already existed"
         print(f"Admin {action} and login verified: {authenticated.user.email}")
     finally:
-        await close_mongo_connection()
+        await close_database()
 
 
 if __name__ == "__main__":

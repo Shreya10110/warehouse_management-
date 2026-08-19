@@ -1,262 +1,219 @@
 # Whitfield Fulfillment — Warehouse Management System
 
-Whitfield Fulfillment is a full-stack Warehouse Management System (WMS) for
-controlling warehouse users, inbound receiving, inventory, damage evidence,
-outbound fulfilment, and audit history in one connected application.
+A role-based warehouse management application for inbound receiving, inventory,
+damage handling, outbound fulfilment, employee approvals, and audit history.
 
-The project uses a React + Vite frontend, a FastAPI backend, and MongoDB for
-persistent warehouse data.
+The active stack is React + Vite, FastAPI, and Supabase PostgreSQL. MongoDB is
+supported only by the optional one-time migration utility, not by the runtime.
 
-## What problem does it solve?
+## Technology stack
 
-Warehouse work often becomes difficult when stock is received manually,
-different teams use disconnected spreadsheets, damaged products have no proof,
-and there is no clear record of who changed inventory.
+| Layer | Technology | Purpose |
+| --- | --- | --- |
+| Frontend | React, Vite, React Router | Role-based web application |
+| Styling | Tailwind CSS, Lucide React | Layout, components, and icons |
+| Backend | Python, FastAPI, Uvicorn | REST APIs and business workflows |
+| Validation | Pydantic | API and domain validation |
+| Database | Supabase PostgreSQL | Primary operational database |
+| Database driver | AsyncPG | Asynchronous SQL access and transactions |
+| Authentication | JWT, python-jose, bcrypt | Login, claims, revocation, password hashing |
+| Media | Cloudinary (optional) | Damage evidence uploads |
+| Testing | Pytest | API, security, and workflow verification |
 
-This system solves those operational problems by:
+## Application flow
 
-- keeping each employee restricted to their assigned warehouse;
-- letting Admin plan expected inbound shipments before goods arrive;
-- calculating good and damaged stock automatically during receiving;
-- tracking reserved, available, damaged, and quarantined inventory separately;
-- recording photos of damaged inbound goods for manager review;
-- guiding outbound staff through pick, pack, label, and ship steps;
-- preventing duplicate carrier tracking numbers;
-- recording important activity in immutable audit logs.
+```text
+React frontend
+    -> REST request (/api/v1/...)
+    -> FastAPI route
+    -> authentication and role/warehouse checks
+    -> controller/service workflow
+    -> shared CRUD repository
+    -> AsyncPG transaction
+    -> Supabase PostgreSQL
+    -> JSON response
+```
 
-## Users and permissions
+Inbound completion is atomic on PostgreSQL: inventory, transaction history,
+damage reports, shipment status, and audit logs either all succeed or all roll
+back. A failed request cannot leave a partial receipt.
 
-### Warehouse Owner / Admin
+## Roles
 
-- Approves manager registrations.
-- Creates warehouses, sellers, products/SKUs, and expected inbound shipments.
-- Creates and assigns outbound customer orders to eligible warehouses.
-- Views company-wide inventory, reports, employees, issues, and audit logs.
-- Resolves damage reports when needed.
+### Owner / Admin
 
-### Warehouse Manager
+- Manages warehouses, sellers, products/SKUs, and employees.
+- Approves managers and creates expected inbound shipments.
+- Creates and assigns outbound orders.
+- Views company-wide inventory, damage reports, issues, and audit logs.
 
-- Works only inside their assigned warehouse.
-- Approves employee registration requests for that warehouse.
-- Monitors inbound, outbound, inventory, damage reports, and the warehouse team.
-- Reviews damage photos and chooses a disposition: return, dispose, move to good
-  stock, or keep quarantined.
-- Sends operational issues to Admin.
+### Manager
 
-### Inbound Employee
+- Operates only inside the assigned warehouse.
+- Approves inbound and outbound employees.
+- Reviews stock, receiving, fulfilment, damage evidence, and team activity.
+- Resolves damage reports and raises issues to the Owner.
 
-- Works only inside their assigned warehouse.
-- Finds Admin-created expected shipments using a tracking number or drop-off
-  ticket.
+### Inbound employee
+
+- Finds expected shipments by tracking or ticket number.
 - Records received and damaged quantities.
-- The system calculates good quantity and updates inventory automatically.
-- Uploads damage-photo evidence for manager review.
+- Completes receiving and uploads damage evidence.
 
-### Outbound Employee
+### Outbound employee
 
-- Works only inside their assigned warehouse.
-- Starts picking, confirms picked items, completes picking, packs the order, and
-  enters carrier details/tracking at packing time.
-- Prints shipping labels before or after shipping.
-- Marks packed packages as shipped; inventory is then consumed automatically.
+- Picks and confirms assigned orders.
+- Packs orders, enters carrier details, and prints QR shipping labels.
+- Ships packages and consumes reserved inventory.
 
-## Main workflows
+## Main features
 
-### Inbound workflow
-
-```text
-Admin creates seller + SKU + expected inbound shipment
-    -> Inbound employee finds shipment
-    -> Employee records received and damaged quantities
-    -> Good quantity is calculated automatically
-    -> Inventory, damage report, transaction, employee, timestamp, and audit log update
-```
-
-### Damage evidence workflow
-
-```text
-Inbound employee records damaged quantity
-    -> Damage report is created as OPEN
-    -> Employee uploads photos
-    -> Manager/Admin opens evidence and decides the disposition
-    -> Inventory and audit history update
-```
-
-### Outbound workflow
-
-```text
-Admin creates customer order
-    -> System finds warehouses with enough available stock
-    -> Admin assigns one warehouse and stock is reserved
-    -> Outbound employee picks and confirms items
-    -> Employee packs, enters carrier/tracking number, and prints label
-    -> Employee marks shipment as shipped
-    -> Reserved and on-hand inventory are reduced safely
-```
-
-## Features
-
-- JWT authentication, logout revocation, and password hashing.
-- Registration approval flow: Admin approves Managers; Managers approve Employees.
-- Warehouse-scoped access control for Managers, Inbound, and Outbound roles.
-- Warehouse, seller/supplier, product, and SKU master data.
-- Barcode/UPC support for inbound product identification.
-- Expected inbound carrier and seller drop-off workflows.
-- Automatic inventory calculations: on hand, reserved, available, damaged, and
-  quarantine balances.
-- Damage reports with photo evidence and manager decisions.
-- Safe outbound order allocation and inventory reservation.
-- Pick, pack, carrier tracking, printable QR shipping labels, and shipment status.
-- Labels remain printable after an order is shipped.
-- Manager issue reporting to Admin.
-- Audit logs and inventory transactions for accountability.
-- Search, role-specific dashboards, database health checks, and MongoDB indexes.
+- JWT authentication and role-based access control.
+- Owner/manager approval workflow for new accounts.
+- Warehouse isolation for staff accounts.
+- Warehouse, seller, product, SKU, barcode, and UPC master data.
+- Expected and direct inbound receiving.
+- On-hand, reserved, available, damaged, and quarantine balances.
+- Damage reports with image evidence and resolution decisions.
+- Outbound allocation, reservation, pick, pack, label, and ship workflows.
+- Immutable audit logs and inventory transaction history.
+- Supabase schema checks and MongoDB-to-Supabase migration utilities.
 
 ## Project structure
 
 ```text
 warehouse_system/
-|-- warehouse-frontend/          # React + Vite user interface
+|-- warehouse-frontend/          # React/Vite application
 |   `-- src/
-|       |-- pages/               # Login, dashboards, inventory, inbound, outbound, etc.
+|       |-- api/                 # API client modules
 |       |-- components/          # Reusable UI components
-|       |-- api/                 # Backend API client
-|       `-- context/             # Authentication state
+|       |-- context/             # Authentication state
+|       |-- layouts/             # Role-aware application layout
+|       `-- pages/               # Admin, manager, inbound, and outbound screens
 |-- warehouse-backend/           # FastAPI application
-|   |-- commons/                 # Shared logging and authentication exports
 |   |-- core/
-|   |   |-- apis/routes/         # API endpoints
-|   |   |-- apis/schemas/        # Request and response validation
+|   |   |-- apis/routes/         # REST endpoints
+|   |   |-- apis/schemas/        # API validation schemas
 |   |   |-- controllers/         # Request orchestration
-|   |   |-- cruds/               # Persistence layer
-|   |   |-- database/            # MongoDB lifecycle, health, and indexes
-|   |   |-- dependencies/        # Authentication and permissions
-|   |   |-- models/              # MongoDB documents
-|   |   |-- services/            # Business workflows
-|   |   `-- utils/               # Shared helpers
-|   |-- scripts/                 # Database/user administration utilities
-|   `-- tests/                   # Backend tests
-|-- render.yaml                  # Render backend + frontend deployment blueprint
-`-- docker-compose.yml           # MongoDB replica-set setup with persistent storage
+|   |   |-- cruds/               # Shared persistence layer
+|   |   |-- database/            # Supabase connection and AsyncPG adapter
+|   |   |-- models/              # Domain models
+|   |   `-- services/            # Business workflows
+|   |-- scripts/                 # Migration, verification, and admin utilities
+|   |-- tests/                   # Backend tests
+|   `-- supabase_schema.sql      # PostgreSQL tables, repairs, and indexes
+|-- render.yaml                  # Render deployment blueprint
+`-- docker-compose.yml           # Optional source for one-time legacy migration
 ```
 
-## Technology
+## Local setup with Supabase
 
-- Frontend: React, Vite, Tailwind CSS, Lucide icons.
-- Backend: FastAPI, Pydantic, Motor.
-- Database: MongoDB.
-- Optional image storage: Cloudinary for damage-photo evidence.
-- Local infrastructure: Docker Compose for MongoDB replica-set support.
-
-## Run locally
-
-### 1. Start MongoDB
-
-From the project root:
-
-```powershell
-docker compose up -d
-```
-
-This starts MongoDB on `127.0.0.1:27017` and keeps its data in the persistent
-`mongodb_data` Docker volume. Do not run `docker compose down -v` unless you
-intentionally want to delete the Docker database volume.
-
-### 2. Start the backend
+### 1. Configure the backend
 
 ```powershell
 cd warehouse-backend
+Copy-Item .env.example .env
+```
+
+Fill in the private values in `warehouse-backend/.env`. Never commit this file.
+
+```text
+SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+SUPABASE_DB_PASSWORD=YOUR_DATABASE_PASSWORD
+SUPABASE_DB_REGION=YOUR_POOLER_REGION
+JWT_SECRET_KEY=YOUR_LONG_RANDOM_SECRET
+CORS_ORIGINS=http://localhost:5200,http://127.0.0.1:5200
+```
+
+You may provide a complete `DATABASE_URL` instead. Use the Supabase pooler URL
+when the direct database host is unavailable over IPv4.
+
+### 2. Install the backend and apply the schema
+
+```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements-dev.txt
-Copy-Item .env.example .env
-uvicorn main:app --host 127.0.0.1 --port 8011 --reload
+python scripts\migrate_supabase.py
+python scripts\check_supabase.py
 ```
 
-Backend API documentation: `http://127.0.0.1:8011/docs`
-
-Set these values in `warehouse-backend/.env`:
-
-```text
-MONGODB_URL=mongodb://127.0.0.1:27017
-MONGODB_DATABASE=warehouse_management
-JWT_SECRET_KEY=use-a-long-private-value
-CORS_ORIGINS=http://localhost:5199,http://127.0.0.1:5199
-```
-
-For damage-image uploads, also add valid Cloudinary credentials to `.env`.
-
-### 3. Start the frontend
+### 3. Start the backend
 
 ```powershell
-cd warehouse-frontend
+uvicorn main:app --host 127.0.0.1 --port 8012 --reload
+```
+
+- Health: `http://127.0.0.1:8012/health`
+- Swagger API documentation: `http://127.0.0.1:8012/docs`
+- API base URL: `http://127.0.0.1:8012/api/v1`
+
+### 4. Start the frontend
+
+Create `warehouse-frontend/.env`:
+
+```text
+VITE_API_URL=http://127.0.0.1:8012/api/v1
+```
+
+Then run:
+
+```powershell
+cd ..\warehouse-frontend
 npm install
-npm run dev -- --host 127.0.0.1 --port 5199
+npm run dev -- --host 127.0.0.1 --port 5200
 ```
 
-Open: `http://127.0.0.1:5199`
+Open `http://127.0.0.1:5200/login`.
 
-## Deploy on Render
+## Admin bootstrap
 
-The repository includes `render.yaml`, which defines both services:
-
-- `warehouse-backend`: FastAPI web service using Python 3.12;
-- `warehouse-frontend`: React/Vite static site with React Router rewrites.
-
-In Render, choose **New > Blueprint**, connect this repository, and use the
-root `render.yaml`. During the initial Blueprint setup, provide these secret
-values when prompted:
+For an empty database, optionally configure:
 
 ```text
-MONGODB_URL=mongodb+srv://...your Atlas URI...
-CLOUDINARY_CLOUD_NAME=...
-CLOUDINARY_API_KEY=...
-CLOUDINARY_API_SECRET=...
-VITE_API_URL=https://YOUR-BACKEND.onrender.com/api/v1
-BOOTSTRAP_OWNER_PASSWORD=choose-a-private-strong-password
+BOOTSTRAP_OWNER_EMAIL=admin@example.com
+BOOTSTRAP_OWNER_PASSWORD=YOUR_PRIVATE_STRONG_PASSWORD
+BOOTSTRAP_OWNER_FIRST_NAME=Warehouse
+BOOTSTRAP_OWNER_LAST_NAME=Owner
+BOOTSTRAP_OWNER_MOBILE=0000000000
 ```
 
-Never commit those values. Render generates `JWT_SECRET_KEY` automatically.
-On the first successful backend startup, the bootstrap creates an approved
-Owner with email `admin@whitfieldfulfillment.com` only if no Owner exists.
-The password is hashed in MongoDB, is never logged, and existing Owners are
-never overwritten. Remove `BOOTSTRAP_OWNER_PASSWORD` from Render after the
-first Owner has been created.
-After the backend is live, confirm `/health` reports a connected database,
-then clear the frontend build cache and redeploy so Vite embeds its API URL.
+The backend creates an Owner only when none exists. The password is hashed,
+never logged, and existing accounts are never overwritten. Remove
+`BOOTSTRAP_OWNER_PASSWORD` after the first successful startup.
 
-## Database safety and inspection
+## Migrating legacy MongoDB data
 
-The application database is named `warehouse_management`. Your warehouse data
-is stored in MongoDB, not inside the source folders; reorganizing code does not
-delete warehouse records.
-
-To inspect it in MongoDB Compass, create a connection using:
-
-```text
-mongodb://127.0.0.1:27017/warehouse_management
-```
-
-Run the read-only database audit:
+Supply the legacy source separately, then run a preview followed by the explicit
+migration. These variables are not part of the normal application `.env`:
 
 ```powershell
 cd warehouse-backend
-.venv\Scripts\python.exe scripts\check_database.py
+$env:LEGACY_MONGODB_URL="mongodb://127.0.0.1:27017"
+$env:LEGACY_MONGODB_DATABASE="warehouse_management"
+python scripts\migrate_mongodb_data_to_supabase.py
+python scripts\migrate_mongodb_data_to_supabase.py --apply
+python scripts\check_supabase.py
 ```
 
-Create a backup outside the repository:
+The migration merges records without deleting destination data and preserves an
+existing Supabase password hash when users share the same email address.
 
-```powershell
-mongodump --uri="mongodb://127.0.0.1:27017" --db=warehouse_management --out="D:\warehouse_backups"
-```
-
-## Tests
+## Tests and build
 
 ```powershell
 cd warehouse-backend
-.venv\Scripts\python.exe -m pytest tests -q -p no:cacheprovider
+.venv\Scripts\python.exe -m pytest -q
+
+cd ..\warehouse-frontend
+npm run build
 ```
 
-The backend test suite covers roles, authentication, warehouse isolation,
-inventory, inbound receiving, damage reports, outbound allocation, picking,
-packing, shipping, approvals, and audit behaviour.
+## Deployment
+
+The repository includes a Render blueprint for the FastAPI service and React
+static site. Configure private Supabase, JWT, Cloudinary, bootstrap-owner, and
+`VITE_API_URL` values in the hosting dashboard—never in Git.
+
+After deployment, verify `/health`, then test authentication before processing
+live warehouse transactions.

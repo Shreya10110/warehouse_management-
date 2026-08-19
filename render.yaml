@@ -15,10 +15,12 @@ services:
         value: production
       - key: API_PREFIX
         value: /api/v1
-      - key: MONGODB_URL
+      - key: SUPABASE_URL
         sync: false
-      - key: MONGODB_DATABASE
-        value: warehouse_management
+      - key: SUPABASE_DB_PASSWORD
+        sync: false
+      - key: SUPABASE_DB_REGION
+        value: ap-northeast-1
       - key: JWT_SECRET_KEY
         generateValue: true
       - key: BOOTSTRAP_OWNER_EMAIL

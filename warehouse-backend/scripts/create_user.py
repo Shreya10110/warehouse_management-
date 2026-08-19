@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from core.database import close_mongo_connection, connect_to_mongo
+from core.database import close_database, connect_database
 from models.user_model import UserRole
 from schemas.user_schemas import UserCreate
 from services.auth_service import register_user
@@ -13,14 +13,14 @@ from services.auth_service import register_user
 
 async def run(args: argparse.Namespace) -> None:
     """Connect to MongoDB and create one validated user from CLI arguments."""
-    await connect_to_mongo()
+    await connect_database()
     try:
         payload = vars(args).copy()
         payload["role"] = UserRole(payload["role"])
         user = await register_user(UserCreate(**payload))
         print(f"Created {user.role} user {user.email} ({user.id})")
     finally:
-        await close_mongo_connection()
+        await close_database()
 
 
 parser = argparse.ArgumentParser(description="Create a WMS user")

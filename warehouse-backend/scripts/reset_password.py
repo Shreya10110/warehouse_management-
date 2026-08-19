@@ -6,13 +6,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from core.database import close_mongo_connection, connect_to_mongo
+from core.database import close_database, connect_database
 from core.security import hash_password
 from cruds.user_crud import find_user_by_email, update_user
 
 
 async def main(email: str, password: str) -> None:
-    await connect_to_mongo()
+    await connect_database()
     try:
         user = await find_user_by_email(email)
         if not user:
@@ -20,7 +20,7 @@ async def main(email: str, password: str) -> None:
         await update_user(user.id, {"password_hash": hash_password(password)})
         print(f"Password reset completed for {user.email}")
     finally:
-        await close_mongo_connection()
+        await close_database()
 
 
 parser = argparse.ArgumentParser()

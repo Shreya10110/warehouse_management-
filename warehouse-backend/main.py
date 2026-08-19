@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import settings
-from core.database import close_mongo_connection, connect_to_mongo, database_health
+from core.database import close_database, connect_database, database_health
 from core.database.indexes import ensure_indexes
 from core.exceptions import register_exception_handlers
 from commons.logger import configure_logging
@@ -17,15 +17,15 @@ logger = configure_logging()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Connect MongoDB and create indexes for the application lifespan."""
-    await connect_to_mongo()
+    """Connect Supabase PostgreSQL and prepare the application lifespan."""
+    await connect_database()
     await ensure_indexes()
     owner = await ensure_bootstrap_owner()
     logger.info("Database connected")
     if owner:
         logger.info("Bootstrap Owner created for %s", owner.email)
     yield
-    await close_mongo_connection()
+    await close_database()
     logger.info("Database disconnected")
 
 

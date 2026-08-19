@@ -1,14 +1,9 @@
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+from typing import Any
 
-from core.config import settings
 from core.database.postgres import close_postgres, connect_postgres, get_postgres_dsn, postgres_health
 
-from commons.logger import configure_logging
-
-logger = configure_logging()
-
-client: AsyncIOMotorClient | None = None
-database: AsyncIOMotorDatabase | None = None
+client: Any | None = None
+database: Any | None = None
 _is_postgres: bool = False
 
 
@@ -17,25 +12,17 @@ def is_postgres_active() -> bool:
     return _is_postgres
 
 
-async def connect_to_mongo() -> None:
-    """Connect to configured database (Supabase PostgreSQL or MongoDB)."""
+async def connect_database() -> None:
+    """Connect to the required Supabase PostgreSQL database."""
     global client, database, _is_postgres
     pg_dsn = get_postgres_dsn()
-    if pg_dsn:
-        try:
-            await connect_postgres()
-            _is_postgres = True
-            return
-        except Exception as err:
-            logger.warning("PostgreSQL connection failed (%s), falling back to MongoDB", err)
-
-    _is_postgres = False
-    client = AsyncIOMotorClient(settings.mongodb_url, serverSelectionTimeoutMS=5000)
-    await client.admin.command("ping")
-    database = client[settings.mongodb_database]
+    if not pg_dsn:
+        raise RuntimeError("Supabase PostgreSQL is not configured. Set DATABASE_URL or SUPABASE_DB_PASSWORD.")
+    await connect_postgres()
+    _is_postgres = True
 
 
-async def close_mongo_connection() -> None:
+async def close_database() -> None:
     """Close the active database client during application shutdown."""
     global client, database, _is_postgres
     if _is_postgres:
@@ -48,8 +35,8 @@ async def close_mongo_connection() -> None:
     database = None
 
 
-def get_database() -> AsyncIOMotorDatabase:
-    """Return the connected MongoDB database or fail when startup did not complete."""
+def get_database() -> Any:
+    """Return a test/legacy database injected outside the Supabase runtime."""
     if database is None and not _is_postgres:
         raise RuntimeError("Database is not connected")
     return database
@@ -60,7 +47,7 @@ async def database_health() -> dict[str, str]:
     if _is_postgres:
         return await postgres_health()
     if client is None or database is None:
-        raise RuntimeError("MongoDB is not connected")
+        raise RuntimeError("Database is not connected")
     await client.admin.command("ping")
     return {"status": "connected", "name": database.name}
 
@@ -68,9 +55,14 @@ async def database_health() -> dict[str, str]:
 __all__ = [
     "client",
     "database",
-    "connect_to_mongo",
-    "close_mongo_connection",
+    "connect_database",
+    "close_database",
     "database_health",
     "get_database",
     "is_postgres_active",
 ]
+
+# Backward-compatible names for older utility scripts. Runtime code uses the
+# database-neutral names above and never falls back from Supabase to MongoDB.
+connect_to_mongo = connect_database
+close_mongo_connection = close_database
