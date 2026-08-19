@@ -30,7 +30,7 @@ async def create_warehouse(payload: WarehouseCreate, user: User) -> dict:
 
 async def list_warehouses(user: User, search: str | None = None, is_active: bool | None = None, skip: int = 0, limit: int = 100) -> list[dict]:
     """List all warehouses for owners or only the logged-in user's warehouse."""
-    query = {} if user.role.value == "OWNER" else {"_id": __import__("bson").ObjectId(user.warehouse_id)}
+    query = {} if user.role.value == "OWNER" else {"_id": user.warehouse_id}
     if search:
         query["$or"] = [{"name": {"$regex": search, "$options": "i"}}, {"warehouse_code": {"$regex": search, "$options": "i"}}, {"city": {"$regex": search, "$options": "i"}}]
     if is_active is not None:

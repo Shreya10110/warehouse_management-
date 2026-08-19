@@ -2,11 +2,13 @@
 
 from pymongo import ASCENDING, DESCENDING
 
-from core.database import get_database
+from core.database import get_database, is_postgres_active
 
 
 async def ensure_indexes() -> None:
     """Create all unique and query indexes required by the implementation plan."""
+    if is_postgres_active():
+        return
     database = get_database()
     await database.users.create_index([("email", ASCENDING)], unique=True)
     await database.warehouses.create_index([("warehouse_code", ASCENDING)], unique=True)

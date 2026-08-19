@@ -6,6 +6,8 @@
 **/dist/
 warehouse-backend/.env
 warehouse-frontend/.env.local
+warehouse-frontend/.env
+warehouse-backend/uvicorn-*.log
 *.pyc
 .DS_Store
 .cluade/

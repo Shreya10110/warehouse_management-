@@ -21,12 +21,12 @@ async def lifespan(app: FastAPI):
     await connect_to_mongo()
     await ensure_indexes()
     owner = await ensure_bootstrap_owner()
-    logger.info("MongoDB connected")
+    logger.info("Database connected")
     if owner:
         logger.info("Bootstrap Owner created for %s", owner.email)
     yield
     await close_mongo_connection()
-    logger.info("MongoDB disconnected")
+    logger.info("Database disconnected")
 
 
 app = FastAPI(title=settings.app_name, version="1.0.0", lifespan=lifespan)

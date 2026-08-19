@@ -98,6 +98,8 @@ async def revoke_access_token(token: str) -> None:
     """Persist a JWT identifier until expiry so logout immediately revokes it."""
     claims = decode_access_token(token)
     expires_at = datetime.fromtimestamp(claims["exp"], tz=timezone.utc)
-    await get_database().revoked_tokens.update_one(
-        {"jti": claims["jti"]}, {"$set": {"jti": claims["jti"], "expires_at": expires_at}}, upsert=True
-    )
+    from cruds.base_crud import CRUDRepository
+    repo = CRUDRepository("revoked_tokens")
+    existing = await repo.find_one({"jti": claims["jti"]})
+    if not existing:
+        await repo.create({"jti": claims["jti"], "expires_at": expires_at})

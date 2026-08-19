@@ -18,7 +18,8 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials | None = De
         claims = decode_access_token(credentials.credentials)
     except ValueError as exc:
         raise AppError(401, "UNAUTHORIZED", str(exc)) from exc
-    if await get_database().revoked_tokens.find_one({"jti": claims.get("jti")}):
+    from cruds.base_crud import CRUDRepository
+    if await CRUDRepository("revoked_tokens").find_one({"jti": claims.get("jti")}):
         raise AppError(401, "UNAUTHORIZED", "This access token has been logged out.")
     user = await find_user_by_id(str(claims.get("user_id", "")))
     if not user or not user.is_active:

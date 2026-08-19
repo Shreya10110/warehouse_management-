@@ -1,10 +1,6 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from bson import ObjectId
-from pymongo.errors import OperationFailure
-
-from core.database import get_database
 from core.exceptions import AppError
 from cruds.base_crud import CRUDRepository, serialize
 from models.order_model import Order
@@ -71,78 +67,34 @@ async def assign_and_reserve(record_id: str, warehouse_id: str, user: User) -> d
     eligible = await eligible_warehouses(order["items"])
     if warehouse_id not in eligible:
         raise AppError(409, "INSUFFICIENT_STOCK", "Selected warehouse cannot fulfill the complete order.")
-    database = get_database()
-    async def transaction(session):
-            """Reserve all order lines and update the order within one MongoDB transaction."""
-            for line in order["items"]:
-                before_document = await database.inventory.find_one(
-                    {"warehouse_id": warehouse_id, "sku": line["sku"]}, session=session
-                )
-                if not before_document:
-                    raise AppError(409, "INSUFFICIENT_STOCK", "Inventory changed before reservation completed.")
-                result = await database.inventory.update_one(
-                    {"warehouse_id": warehouse_id, "sku": line["sku"],
-                     "$expr": {"$gte": [{"$subtract": ["$on_hand_quantity", {"$add": ["$reserved_quantity", "$damaged_quantity", "$quarantine_quantity"]}]}, line["quantity"]]}},
-                    {"$inc": {"reserved_quantity": line["quantity"]}, "$set": {"updated_at": datetime.now(timezone.utc)}}, session=session,
-                )
-                if result.modified_count != 1:
-                    raise AppError(409, "INSUFFICIENT_STOCK", "Inventory changed before reservation completed.")
-                before = {key: before_document.get(key, 0) for key in ("on_hand_quantity", "reserved_quantity", "damaged_quantity", "quarantine_quantity")}
-                after = before | {"reserved_quantity": before["reserved_quantity"] + line["quantity"]}
-                transaction_record = InventoryTransaction(
-                    warehouse_id=warehouse_id, sku=line["sku"], transaction_type="RESERVE",
-                    quantity=line["quantity"], before_values=before, after_values=after,
-                    reference_type="ORDER", reference_id=order["order_id"], performed_by=user.id,
-                )
-                await database.inventory_transactions.insert_one(transaction_record.to_document(), session=session)
-                audit = AuditLog(
-                    user_id=user.id, user_role=user.role.value, warehouse_id=warehouse_id,
-                    action="RESERVE", entity_type="INVENTORY", entity_id=str(before_document["_id"]),
-                    old_value=before, new_value=after, metadata={"sku": line["sku"], "order_id": order["order_id"]},
-                )
-                await database.audit_logs.insert_one(audit.to_document(), session=session)
-            await database.orders.update_one(
-                {"_id": ObjectId(record_id)}, {"$set": {"assigned_warehouse_id": warehouse_id, "eligible_warehouse_ids": eligible, "status": "CREATED", "updated_at": datetime.now(timezone.utc)}}, session=session,
-            )
-            order_audit = AuditLog(
-                user_id=user.id, user_role=user.role.value, warehouse_id=warehouse_id,
-                action="ASSIGN_AND_RESERVE", entity_type="ORDER", entity_id=record_id,
-                old_value={"status": order["status"]}, new_value={"status": "CREATED", "assigned_warehouse_id": warehouse_id},
-            )
-            await database.audit_logs.insert_one(order_audit.to_document(), session=session)
+    reserved = []
     try:
-        async with await database.client.start_session() as session:
-            await session.with_transaction(transaction)
-    except (NotImplementedError, OperationFailure) as exc:
-        if isinstance(exc, OperationFailure) and exc.code not in (20, 263):
-            raise
-        reserved = []
-        try:
-            for line in order["items"]:
-                result = await database.inventory.update_one(
-                    {"warehouse_id": warehouse_id, "sku": line["sku"],
-                     "$expr": {"$gte": [{"$subtract": ["$on_hand_quantity", {"$add": ["$reserved_quantity", "$damaged_quantity", "$quarantine_quantity"]}]}, line["quantity"]]}},
-                    {"$inc": {"reserved_quantity": line["quantity"]}, "$set": {"updated_at": datetime.now(timezone.utc)}},
-                )
-                if result.modified_count != 1:
-                    raise AppError(409, "INSUFFICIENT_STOCK", "Inventory changed before reservation completed.")
-                reserved.append(line)
-            updated_result = await database.orders.update_one(
-                {"_id": ObjectId(record_id), "status": {"$in": ["PENDING", "AWAITING_WAREHOUSE_SELECTION"]}},
-                {"$set": {"assigned_warehouse_id": warehouse_id, "eligible_warehouse_ids": eligible, "status": "CREATED", "updated_at": datetime.now(timezone.utc)}},
+        for line in order["items"]:
+            current = await inventory_repo.find_one({"warehouse_id": warehouse_id, "sku": line["sku"]})
+            if not current or available(current) < line["quantity"]:
+                raise AppError(409, "INSUFFICIENT_STOCK", "Inventory changed before reservation completed.")
+            updated_inventory = await inventory_repo.update_where(
+                {"_id": current["id"], "reserved_quantity": current["reserved_quantity"]},
+                increments={"reserved_quantity": line["quantity"]},
             )
-            if updated_result.modified_count != 1:
-                raise AppError(409, "INVALID_ORDER_STATUS", "Order changed before reservation completed.")
-        except Exception:
-            for line in reserved:
-                await database.inventory.update_one(
-                    {"warehouse_id": warehouse_id, "sku": line["sku"]},
-                    {"$inc": {"reserved_quantity": -line["quantity"]}},
-                )
-            raise
+            if not updated_inventory:
+                raise AppError(409, "INSUFFICIENT_STOCK", "Inventory changed before reservation completed.")
+            reserved.append(line)
+        updated_order = await order_repo.update_where(
+            {"_id": record_id, "status": {"$in": ["PENDING", "AWAITING_WAREHOUSE_SELECTION"]}},
+            {"assigned_warehouse_id": warehouse_id, "eligible_warehouse_ids": eligible, "status": "CREATED"},
+        )
+        if not updated_order:
+            raise AppError(409, "INVALID_ORDER_STATUS", "Order changed before reservation completed.")
+    except Exception:
         for line in reserved:
-            await record_transaction(warehouse_id, line["sku"], "RESERVE", line["quantity"], "ORDER", order["order_id"], user)
-        await record(user, "ASSIGN_AND_RESERVE", "ORDER", record_id, warehouse_id, order, {"status": "CREATED", "assigned_warehouse_id": warehouse_id})
+            await inventory_repo.update_where(
+                {"warehouse_id": warehouse_id, "sku": line["sku"]}, increments={"reserved_quantity": -line["quantity"]}
+            )
+        raise
+    for line in reserved:
+        await record_transaction(warehouse_id, line["sku"], "RESERVE", line["quantity"], "ORDER", order["order_id"], user)
+    await record(user, "ASSIGN_AND_RESERVE", "ORDER", record_id, warehouse_id, order, {"status": "CREATED", "assigned_warehouse_id": warehouse_id})
     updated = await order_repo.get(record_id)
     return updated
 
@@ -213,11 +165,11 @@ async def cancel(record_id: str, user: User) -> dict:
     if order["status"] not in cancellable:
         raise AppError(409, "INVALID_ORDER_STATUS", "Order cannot be cancelled in its current status.")
     authorize_order(order, user)
-    claim = await get_database().orders.update_one(
-        {"_id": ObjectId(record_id), "status": order["status"]},
-        {"$set": {"status": "CANCELLING", "updated_at": datetime.now(timezone.utc)}},
+    claim = await order_repo.update_where(
+        {"_id": record_id, "status": order["status"]},
+        {"status": "CANCELLING", "updated_at": datetime.now(timezone.utc)},
     )
-    if claim.modified_count != 1:
+    if not claim:
         raise AppError(409, "INVALID_ORDER_STATUS", "Order changed before cancellation completed.")
     try:
         if order.get("assigned_warehouse_id") and order["status"] in ("CREATED", "PICKING", "PICKED", "PACKED"):
@@ -242,15 +194,10 @@ async def ship_package(package_id: str, user: User) -> dict:
     authorize_order(order, user)
     if order["status"] != "PACKED" or package["status"] != "PACKED":
         raise AppError(409, "INVALID_ORDER_STATUS", "Only packed orders can be shipped.")
-    database = get_database()
-    package_claim = await database.packages.update_one(
-        {"_id": ObjectId(package_id), "status": "PACKED"}, {"$set": {"status": "SHIPPING"}}
-    )
-    order_claim = await database.orders.update_one(
-        {"_id": ObjectId(order["id"]), "status": "PACKED"}, {"$set": {"status": "SHIPPING"}}
-    )
-    if package_claim.modified_count != 1 or order_claim.modified_count != 1:
-        if package_claim.modified_count == 1:
+    package_claim = await package_repo.update_where({"_id": package_id, "status": "PACKED"}, {"status": "SHIPPING"})
+    order_claim = await order_repo.update_where({"_id": order["id"], "status": "PACKED"}, {"status": "SHIPPING"})
+    if not package_claim or not order_claim:
+        if package_claim:
             await package_repo.update(package_id, {"status": "PACKED"})
         raise AppError(409, "INVALID_ORDER_STATUS", "Package is already being shipped.")
     applied = []
@@ -268,9 +215,9 @@ async def ship_package(package_id: str, user: User) -> dict:
         return updated
     except Exception:
         for sku, changes in applied:
-            await database.inventory.update_one(
+            await inventory_repo.update_where(
                 {"warehouse_id": order["assigned_warehouse_id"], "sku": sku},
-                {"$inc": {field: -quantity for field, quantity in changes.items()}},
+                increments={field: -quantity for field, quantity in changes.items()},
             )
         await package_repo.update(package_id, {"status": "PACKED"})
         await order_repo.update(order["id"], {"status": "PACKED"})

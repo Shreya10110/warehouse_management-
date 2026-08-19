@@ -1,9 +1,9 @@
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from uuid import uuid4
-from bson import ObjectId
-from core.database import get_database
 
 from core.exceptions import AppError
+from core.database import is_postgres_active, postgres
 from cruds.base_crud import CRUDRepository
 from models.damage_report_model import DamageReport
 from models.inbound_shipment_model import InboundShipment
@@ -15,6 +15,8 @@ from services.inventory_service import change_quantities, product_repo
 shipment_repo = CRUDRepository("inbound_shipments")
 damage_repo = CRUDRepository("damage_reports")
 seller_repo = CRUDRepository("sellers")
+warehouse_repo = CRUDRepository("warehouses")
+inventory_repo = CRUDRepository("inventory")
 
 
 def warehouse_for(user: User, requested: str | None) -> str:
@@ -31,7 +33,8 @@ def warehouse_for(user: User, requested: str | None) -> str:
 async def create_shipment(payload: ShipmentCreate, user: User) -> dict:
     """Validate products and unique references, then register an inbound shipment."""
     warehouse_id = warehouse_for(user, payload.warehouse_id)
-    if not await get_database().warehouses.find_one({"_id": ObjectId(warehouse_id), "is_active": True}):
+    warehouse = await warehouse_repo.get(warehouse_id)
+    if not warehouse or not warehouse.get("is_active", True):
         raise AppError(404, "WAREHOUSE_NOT_FOUND", "Destination warehouse was not found or is inactive.")
     if payload.seller_id:
         seller = await seller_repo.get(payload.seller_id)
@@ -124,43 +127,46 @@ async def complete_expected_shipment(record_id: str, payload: ExpectedShipmentRe
     if set(actual_skus) != set(expected):
         raise AppError(400, "MISSING_EXPECTED_PRODUCT", "Receive every expected product before completing the shipment.")
 
-    claim = await get_database().inbound_shipments.update_one(
-        {"_id": ObjectId(record_id), "status": "RECEIVING"},
-        {"$set": {"status": "COMPLETING", "updated_at": datetime.now(timezone.utc)}},
-    )
-    if claim.modified_count != 1:
-        raise AppError(409, "SHIPMENT_ALREADY_COMPLETED", "Shipment is already being completed.")
-    applied = []
-    try:
-        for item in received:
-            changes = {"on_hand_quantity": item["received_quantity"], "damaged_quantity": item["damaged_quantity"]}
-            await change_quantities(
-                warehouse_id, item["sku"], changes, "INBOUND", "INBOUND_SHIPMENT",
-                shipment["shipment_id"], user, transaction_quantity=item["received_quantity"],
-            )
-            applied.append((item["sku"], changes))
-    except Exception:
-        for sku, changes in applied:
-            await get_database().inventory.update_one({"warehouse_id": warehouse_id, "sku": sku}, {"$inc": {field: -value for field, value in changes.items()}})
-        await shipment_repo.update(record_id, {"status": "RECEIVING", "updated_at": datetime.now(timezone.utc)})
-        raise
+    transaction = postgres.transaction() if is_postgres_active() else nullcontext()
+    async with transaction:
+        claim = await shipment_repo.update_where(
+            {"_id": record_id, "status": "RECEIVING"},
+            {"status": "COMPLETING", "updated_at": datetime.now(timezone.utc)},
+        )
+        if not claim:
+            raise AppError(409, "SHIPMENT_ALREADY_COMPLETED", "Shipment is already being completed.")
+        applied = []
+        try:
+            for item in received:
+                changes = {"on_hand_quantity": item["received_quantity"], "damaged_quantity": item["damaged_quantity"]}
+                await change_quantities(
+                    warehouse_id, item["sku"], changes, "INBOUND", "INBOUND_SHIPMENT",
+                    shipment["shipment_id"], user, transaction_quantity=item["received_quantity"],
+                )
+                applied.append((item["sku"], changes))
+        except Exception:
+            if not is_postgres_active():
+                for sku, changes in applied:
+                    await inventory_repo.update_where({"warehouse_id": warehouse_id, "sku": sku}, increments={field: -value for field, value in changes.items()})
+                await shipment_repo.update(record_id, {"status": "RECEIVING", "updated_at": datetime.now(timezone.utc)})
+            raise
 
-    now = datetime.now(timezone.utc)
-    for item in received:
-        if item["damaged_quantity"]:
-            report = await damage_repo.create(DamageReport(
-                damage_report_id=f"DMG-{uuid4().hex[:10].upper()}", shipment_id=shipment["shipment_id"],
-                warehouse_id=warehouse_id, sku=item["sku"], damage_quantity=item["damaged_quantity"],
-                damage_type="OTHER", damage_reason="Recorded during expected inbound receiving",
-                reported_by=user.id, reported_at=now.isoformat(),
-            ).to_document())
-            await record(user, "REPORT_DAMAGE", "DAMAGE_REPORT", report["id"], warehouse_id, new=report)
-    updated = await shipment_repo.update(record_id, {
-        "received_items": received, "received_by": user.id, "received_at": now.isoformat(),
-        "completed_at": now.isoformat(), "status": "COMPLETED", "updated_at": now,
-    })
-    await record(user, "COMPLETE", "INBOUND_SHIPMENT", record_id, warehouse_id, shipment, updated)
-    return updated
+        now = datetime.now(timezone.utc)
+        for item in received:
+            if item["damaged_quantity"]:
+                report = await damage_repo.create(DamageReport(
+                    damage_report_id=f"DMG-{uuid4().hex[:10].upper()}", shipment_id=shipment["shipment_id"],
+                    warehouse_id=warehouse_id, sku=item["sku"], damage_quantity=item["damaged_quantity"],
+                    damage_type="OTHER", damage_reason="Recorded during expected inbound receiving",
+                    reported_by=user.id, reported_at=now.isoformat(),
+                ).to_document())
+                await record(user, "REPORT_DAMAGE", "DAMAGE_REPORT", report["id"], warehouse_id, new=report)
+        updated = await shipment_repo.update(record_id, {
+            "received_items": received, "received_by": user.id, "received_at": now.isoformat(),
+            "completed_at": now.isoformat(), "status": "COMPLETED", "updated_at": now,
+        })
+        await record(user, "COMPLETE", "INBOUND_SHIPMENT", record_id, warehouse_id, shipment, updated)
+        return updated
 
 
 async def complete_receiving(payload: DirectReceiptCreate, user: User) -> dict:
@@ -215,9 +221,9 @@ async def complete_receiving(payload: DirectReceiptCreate, user: User) -> dict:
             applied.append((item["sku"], changes))
     except Exception:
         for sku, changes in applied:
-            await get_database().inventory.update_one(
+            await inventory_repo.update_where(
                 {"warehouse_id": warehouse_id, "sku": sku},
-                {"$inc": {field: -quantity for field, quantity in changes.items()}},
+                increments={field: -quantity for field, quantity in changes.items()},
             )
         await shipment_repo.update(created["id"], {"status": "FAILED", "updated_at": datetime.now(timezone.utc)})
         raise
@@ -262,11 +268,11 @@ async def receive_shipment(record_id: str, payload: ShipmentReceive, user: User)
         status = "MATCHED" if difference == 0 else ("SHORT_RECEIVED" if difference < 0 else "OVER_RECEIVED")
         detail = item.model_dump() | {"expected_quantity": expected[item.sku], "difference": difference, "quantity_status": status}
         received.append(detail)
-    claim = await get_database().inbound_shipments.update_one(
-        {"_id": ObjectId(record_id), "status": shipment["status"]},
-        {"$set": {"status": "RECEIVING", "updated_at": datetime.now(timezone.utc)}},
+    claim = await shipment_repo.update_where(
+        {"_id": record_id, "status": shipment["status"]},
+        {"status": "RECEIVING", "updated_at": datetime.now(timezone.utc)},
     )
-    if claim.modified_count != 1:
+    if not claim:
         raise AppError(409, "SHIPMENT_ALREADY_COMPLETED", "This shipment is already being received or completed.")
     applied = []
     try:
@@ -279,9 +285,9 @@ async def receive_shipment(record_id: str, payload: ShipmentReceive, user: User)
             applied.append((item.sku, changes))
     except Exception:
         for sku, changes in applied:
-            await get_database().inventory.update_one(
+            await inventory_repo.update_where(
                 {"warehouse_id": shipment["warehouse_id"], "sku": sku},
-                {"$inc": {field: -quantity for field, quantity in changes.items()}},
+                increments={field: -quantity for field, quantity in changes.items()},
             )
         await shipment_repo.update(record_id, {"status": shipment["status"], "updated_at": datetime.now(timezone.utc)})
         raise

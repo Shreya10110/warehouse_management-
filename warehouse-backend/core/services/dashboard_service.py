@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
-from core.database import get_database
 from core.exceptions import AppError
+from cruds.base_crud import CRUDRepository
 from models.user_model import User
 from services.audit_service import audit_repo
 from services.inventory_service import list_inventory
@@ -21,7 +21,6 @@ async def summary(user: User, audience: str) -> dict:
     orders = await order_repo.list({"assigned_warehouse_id": warehouse_id} if warehouse_id else {})
     warehouses = [await warehouse_repo.get(warehouse_id)] if warehouse_id else await warehouse_repo.list()
     warehouses = [warehouse for warehouse in warehouses if warehouse]
-    database = get_database()
     response = {
         "total_warehouses": len(warehouses),
         "total_skus": len({item["sku"] for item in inventory}),
@@ -37,7 +36,7 @@ async def summary(user: User, audience: str) -> dict:
         "recent_activity": await audit_repo.list(query, limit=10),
     }
     if warehouse_id:
-        response["team_size"] = await database.users.count_documents({"warehouse_id": warehouse_id, "is_active": True})
+        response["team_size"] = await CRUDRepository("users").count({"warehouse_id": warehouse_id, "is_active": True})
     if audience == "inbound":
         response.update({
             "todays_shipments": response["inbound_today"],
@@ -69,14 +68,12 @@ async def global_search(term: str, user: User) -> list[dict]:
         ("warehouses", ["warehouse_code", "name"]),
         ("users", ["email", "first_name", "last_name"]),
     ]
-    database = get_database()
     results = []
     for collection_name, fields in configurations:
         query = {"$or": [{field: regex} for field in fields]}
         if scope and collection_name not in ("products",):
             query |= scope
-        async for document in database[collection_name].find(query).limit(10):
-            document["id"] = str(document.pop("_id"))
+        for document in await CRUDRepository(collection_name).list(query, limit=10):
             document["result_type"] = collection_name
             document.pop("password_hash", None)
             results.append(document)

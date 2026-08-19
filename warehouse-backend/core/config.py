@@ -12,6 +12,11 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
     cors_origins: str = "http://localhost:5199,http://127.0.0.1:5199"
+    database_url: str = ""
+    supabase_url: str = "https://mnfizlridobgglswpdfn.supabase.co"
+    supabase_key: str = ""
+    supabase_db_password: str = ""
+    supabase_db_region: str = "ap-northeast-1"
     cloudinary_cloud_name: str = ""
     cloudinary_api_key: str = ""
     cloudinary_api_secret: str = ""
@@ -26,7 +31,10 @@ class Settings(BaseSettings):
     @property
     def allowed_origins(self) -> list[str]:
         """Parse the comma-delimited CORS origin configuration."""
-        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+        origins = [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+        if self.environment.lower() == "development":
+            origins.extend(("http://localhost:5200", "http://127.0.0.1:5200"))
+        return list(dict.fromkeys(origins))
 
 
 @lru_cache
