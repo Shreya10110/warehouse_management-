@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     supabase_url: str = "https://mnfizlridobgglswpdfn.supabase.co"
     supabase_key: str = ""
     supabase_db_password: str = ""
-    supabase_db_region: str = "ap-northeast-1"
+    supabase_db_region: str = "ap-southeast-1"
     cloudinary_cloud_name: str = ""
     cloudinary_api_key: str = ""
     cloudinary_api_secret: str = ""

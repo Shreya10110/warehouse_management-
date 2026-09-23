@@ -20,7 +20,7 @@ services:
       - key: SUPABASE_DB_PASSWORD
         sync: false
       - key: SUPABASE_DB_REGION
-        value: ap-northeast-1
+        value: ap-southeast-1
       - key: DATABASE_URL
         sync: false
       - key: JWT_SECRET_KEY
