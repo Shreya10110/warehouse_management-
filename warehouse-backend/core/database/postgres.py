@@ -18,6 +18,9 @@ def get_postgres_dsn() -> str:
     if url.startswith("postgresql+asyncpg://"):
         url = url.replace("postgresql+asyncpg://", "postgresql://", 1)
     if url:
+        if "supabase.com" in url and "sslmode" not in url:
+            sep = "&" if "?" in url else "?"
+            url = f"{url}{sep}sslmode=require"
         return url
     if settings.supabase_db_password:
         project_ref = urlparse(settings.supabase_url).hostname.split(".")[0]

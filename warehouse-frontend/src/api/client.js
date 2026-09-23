@@ -1,4 +1,19 @@
-const API_URL = (import.meta.env.VITE_API_URL?.trim() || 'http://127.0.0.1:8011/api/v1').replace(/\/+$/, '')
+function getApiUrl() {
+  const envUrl = import.meta.env.VITE_API_URL?.trim()
+  if (envUrl) {
+    return envUrl.replace(/\/+$/, '')
+  }
+  if (typeof window !== 'undefined' && window.location) {
+    const hostname = window.location.hostname
+    if (hostname.endsWith('.onrender.com')) {
+      const backendHost = hostname.replace('warehouse-frontend', 'warehouse-backend')
+      return `https://${backendHost}/api/v1`
+    }
+  }
+  return 'http://127.0.0.1:8012/api/v1'
+}
+
+const API_URL = getApiUrl()
 
 export class ApiError extends Error {
   constructor(message, status, code) {
@@ -20,8 +35,21 @@ export async function apiRequest(path, options = {}) {
   const contentType = response.headers.get('content-type') ?? ''
   const data = contentType.includes('application/json') ? await response.json().catch(() => ({})) : await response.text()
   if (!response.ok) {
-    const detail = data.detail ?? {}
-    throw new ApiError(detail.message ?? 'Request failed. Please try again.', response.status, detail.code)
+    let message = `Request failed (${response.status})`
+    let code = 'ERROR'
+    if (typeof data === 'object' && data !== null) {
+      if (typeof data.detail === 'string') {
+        message = data.detail
+      } else if (data.detail && typeof data.detail.message === 'string') {
+        message = data.detail.message
+        code = data.detail.code || code
+      } else if (typeof data.message === 'string') {
+        message = data.message
+      }
+    } else if (typeof data === 'string' && data.trim().length > 0) {
+      message = data.length > 200 ? `Server returned HTTP ${response.status}` : data.trim()
+    }
+    throw new ApiError(message, response.status, code)
   }
   return data
 }
