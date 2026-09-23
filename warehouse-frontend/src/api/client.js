@@ -1,7 +1,11 @@
 function getApiUrl() {
-  const envUrl = import.meta.env.VITE_API_URL?.trim()
+  let envUrl = import.meta.env.VITE_API_URL?.trim()
   if (envUrl) {
-    return envUrl.replace(/\/+$/, '')
+    envUrl = envUrl.replace(/\/+$/, '')
+    if (!envUrl.endsWith('/api/v1')) {
+      envUrl = `${envUrl}/api/v1`
+    }
+    return envUrl
   }
   if (typeof window !== 'undefined' && window.location) {
     const hostname = window.location.hostname
